@@ -1,0 +1,7 @@
+{
+  "subject": "Welcome to Sigx",
+  "welcome": "Hi {name}, welcome aboard!",
+  "body": "Your account is ready. You have {credits, number} credits to spend.",
+  "signoff": "— The Sigx team",
+  "ps": "P.S. Reply to this email any time — a real human reads it."
+}

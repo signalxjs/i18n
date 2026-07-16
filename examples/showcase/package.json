@@ -1,0 +1,21 @@
+{
+  "name": "@sigx/i18n-showcase-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SPA showcasing @sigx/i18n — targets, accessor, <T>, use:t, plurals, detection, persistence",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@sigx/i18n": "workspace:^",
+    "sigx": "^0.10.0"
+  },
+  "devDependencies": {
+    "@sigx/vite": "^0.10.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.3"
+  }
+}

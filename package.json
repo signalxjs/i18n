@@ -5,7 +5,8 @@
   "description": "Reactive localization (i18n) for SignalX",
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "scripts": {
     "wt": "node scripts/worktree.mjs",

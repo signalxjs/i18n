@@ -1,0 +1,9 @@
+{
+  "title": "Lokaliserad på servern",
+  "intro": "Den här sidan renderades på {locale} av @sigx/i18n/server — utan klient-JavaScript.",
+  "users": {
+    "one": "# person bygger med sigx",
+    "other": "# personer bygger med sigx"
+  },
+  "cta": "Läs dokumentationen"
+}

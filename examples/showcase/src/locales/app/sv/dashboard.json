@@ -1,0 +1,9 @@
+{
+  "title": "Instrumentpanel",
+  "revenue": "Intäkter: {amount, number}",
+  "updated": "Uppdaterad {when, date}",
+  "items": {
+    "one": "# artikel i din kundvagn",
+    "other": "# artiklar i din kundvagn"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "subject": "Välkommen till Sigx",
+  "welcome": "Hej {name}, välkommen ombord!",
+  "body": "Ditt konto är klart. Du har {credits, number} krediter att spendera.",
+  "signoff": "— Sigx-teamet"
+}

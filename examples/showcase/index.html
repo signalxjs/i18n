@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@sigx/i18n — showcase</title>
+    <style>
+      :root { color-scheme: light dark; --line: color-mix(in oklab, currentColor 15%, transparent); }
+      * { box-sizing: border-box; }
+      body { font: 15px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 960px; margin-inline: auto; }
+      h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+      .muted { opacity: .65; }
+      .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+      .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.5rem; }
+      @media (max-width: 640px) { .panels { grid-template-columns: 1fr; } }
+      .card { border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.15rem; }
+      .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; opacity: .6; margin: 0 0 .5rem; }
+      button { font: inherit; padding: .35rem .8rem; border-radius: 8px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+      button[aria-pressed="true"] { background: currentColor; color: Canvas; }
+      input { font: inherit; padding: .3rem .5rem; border-radius: 8px; border: 1px solid var(--line); background: transparent; width: 8rem; }
+      code { background: color-mix(in oklab, currentColor 8%, transparent); padding: .05rem .3rem; border-radius: 4px; }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

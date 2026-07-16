@@ -1,0 +1,9 @@
+{
+  "title": "Dashboard",
+  "revenue": "Revenue: {amount, number}",
+  "updated": "Updated {when, date}",
+  "items": {
+    "one": "# item in your cart",
+    "other": "# items in your cart"
+  }
+}
