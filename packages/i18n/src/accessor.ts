@@ -120,7 +120,7 @@ export function useTranslation<NS extends KnownNamespace = KnownNamespace>(
 ): TypedTranslator<NS> {
     const store = useI18n();
     const ns = namespace ?? store.defaultNamespace;
-    void store.ensureNamespace(ns);
+    void store.ensureNamespace(ns, options?.target); // load the requested target's catalogs
     return createTranslator(store, ns, options?.target) as unknown as TypedTranslator<NS>;
 }
 

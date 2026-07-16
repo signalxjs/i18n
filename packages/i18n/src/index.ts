@@ -46,7 +46,20 @@ export { installPersistSSR } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
 
 export { useTranslation, useLocale, createTranslator } from './accessor.js';
-export type { Translator, TranslatorNode, LocaleControls } from './accessor.js';
+export type {
+    Translator,
+    TranslatorNode,
+    TypedTranslator,
+    LocaleControls,
+    KnownLocale,
+    KnownTarget,
+    KnownNamespace,
+    KeysForNamespace
+} from './accessor.js';
+
+// Universal `<T>` component (renderer-agnostic — DOM, lynx, terminal, SSR).
+export { T, renderRich } from './component.js';
+export type { TProps, RichComponents } from './component.js';
 
 export { createI18n } from './plugin.js';
 export type { I18nOptions } from './plugin.js';

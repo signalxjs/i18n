@@ -7,6 +7,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Many concurrent targets:** the store tracks active `(target, namespace)`
+  scopes, so several targets load and render at once; `setLocale` reloads every
+  active scope. `useTranslation(ns, { target })` / `<T target>` load the target
+  they read from.
+- **Universal `<T>` component:** moved into the core `@sigx/i18n` entry (was in
+  `/dom`). It renders text as a child and uses only `@sigx/runtime-core`, so it
+  works on any sigx renderer (DOM, lynx, terminal, SSR) — on lynx place it inside
+  a `<text>` host. `/dom` re-exports it for convenience.
+- **Custom detector injection:** `DetectionOptions.detectors?: Detector[]` puts
+  app-supplied detectors first — how non-web runtimes (lynx/terminal) inject a
+  native locale source through the same `Detector` interface.
 - Initial `@sigx/i18n` package: reactive localization for SignalX.
   - Core store (`createI18n`, `useI18n`, `useTranslation`) built on `@sigx/store`.
   - Master locale with automatic fallback + BCP-47 locale fallback chain.

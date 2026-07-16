@@ -48,10 +48,33 @@ t('items', { count: 3 })   // string-key form — no build plugin required
 
 | Entry | Purpose |
 |---|---|
-| `@sigx/i18n` | core store, `t`/`useTranslation`, formatter, detectors, plugin |
-| `@sigx/i18n/dom` | `<T>` component + `use:t` directive |
+| `@sigx/i18n` | store, `useTranslation` accessor, **`<T>` component**, formatter, detectors, plugin — the universal binding surface (DOM, lynx, terminal, SSR) |
+| `@sigx/i18n/dom` | `use:t` directive — a DOM-only convenience (no cross-renderer twin) |
 | `@sigx/i18n/server` | non-reactive `createServerT()` for mail templates & jobs |
 | `@sigx/i18n/vite` | typed-keys codegen + missing-translation build gate + HMR |
+
+## Works on any sigx renderer (incl. lynx)
+
+The accessor and `<T>` render *text* and depend only on `@sigx/runtime-core`, so
+they run on every sigx renderer unchanged. On **lynx**, place them inside a
+`<text>` host (like all lynx text), inject a native-locale detector, and pass
+`@sigx/lynx-storage` for persistence:
+
+```tsx
+// lynx
+<text>{t.cart.title}</text>
+<text><T k="cart.items" params={{ count }} /></text>
+
+app.use(createI18n({
+  fallbackLocale: 'en',
+  supported: ['en', 'sv'],
+  detection: { detectors: [{ name: 'native', detect: () => readDeviceLocale() }] },
+  persistence: { storage: Storage /* from @sigx/lynx-storage */ },
+  load: (target, locale, ns) => import(`./locales/${target}/${locale}/${ns}.json`),
+}));
+```
+
+`use:t` is DOM-only; on lynx/terminal use the accessor or `<T>`.
 
 ## License
 

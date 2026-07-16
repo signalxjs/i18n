@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { component, defineApp } from 'sigx';
 import { createI18n } from '../src/plugin.js';
 import { useI18n } from '../src/store.js';
-import { T, i18nDirectives } from '../src/dom.js';
+import { T } from '../src/index.js'; // <T> is universal — lives in the core entry
+import { i18nDirectives } from '../src/dom.js';
 import type { I18nOptions } from '../src/plugin.js';
 
 const opts: I18nOptions = {

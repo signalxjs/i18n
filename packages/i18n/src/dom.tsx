@@ -1,80 +1,17 @@
 /**
- * @sigx/i18n/dom — DOM/TSX bindings.
+ * @sigx/i18n/dom — the DOM-only `use:t` directive.
  *
- *  - `<T>`  : the SSR-correct binding. Renders translated text (with params and
- *             optional rich `components`) as a child node, so the server emits
- *             the text and the client hydrates it without a flash.
- *  - `use:t`: a client-side convenience directive that sets an element's
- *             textContent from a key, reactively on locale change. It has no
- *             server hook (a directive can only merge attributes, not inner
- *             text), so for server-rendered text prefer `<T>`.
- *
- * Register the directive with `app.use(i18nDirectives())`; `<T>` needs no
- * registration.
+ * `use:t` imperatively sets an element's `textContent` (a DOM/`HTMLElement`-only
+ * operation with no portable cross-renderer equivalent), so it lives here as a
+ * DOM convenience with **no lynx/terminal twin**. The cross-renderer bindings are
+ * the accessor (`useTranslation`) and the `<T>` component — both exported from the
+ * universal `@sigx/i18n` core (`<T>` is re-exported here for convenience).
  */
 
-import { component, defineDirective, effect, type Define } from 'sigx';
-import type { App, Plugin, JSXElement } from '@sigx/runtime-core';
+import { defineDirective, effect } from 'sigx';
+import type { App, Plugin } from '@sigx/runtime-core';
 import { useI18n, type I18nStore } from './store.js';
 import type { Params } from './types.js';
-
-// ── Rich interpolation ──────────────────────────────────────────────────────
-
-/** A rich-tag renderer: wraps the inner text in an element. */
-export type RichComponents = Record<string, (children: string) => JSXElement>;
-
-const RICH_TAG = /<(\w+)>([\s\S]*?)<\/\1>/g;
-
-/**
- * Split an already-interpolated string on `<name>inner</name>` tags, mapping
- * each tag to `components[name](inner)`. Non-nested; unknown tags stay literal.
- */
-function renderRich(text: string, components: RichComponents): (string | JSXElement)[] {
-    const out: (string | JSXElement)[] = [];
-    let last = 0;
-    for (const match of text.matchAll(RICH_TAG)) {
-        const [full, name, inner] = match;
-        const start = match.index ?? 0;
-        if (start > last) out.push(text.slice(last, start));
-        const render = components[name];
-        out.push(render ? render(inner) : full);
-        last = start + full.length;
-    }
-    if (last < text.length) out.push(text.slice(last));
-    return out;
-}
-
-// ── <T> component ───────────────────────────────────────────────────────────
-
-export type TProps = Define.Prop<'k', string, true> &
-    Define.Prop<'params', Params, false> &
-    Define.Prop<'ns', string, false> &
-    Define.Prop<'target', string, false> &
-    Define.Prop<'components', RichComponents, false>;
-
-/**
- * Declarative translation.
- *
- * ```tsx
- * <T k="cart.items" params={{ count }} />
- * <T k="legal.terms" components={{ a: (c) => <a href="/terms">{c}</a> }} />
- * ```
- */
-export const T = component<TProps>(({ props }) => {
-    const store = useI18n();
-    const ns = () => props.ns ?? store.defaultNamespace;
-    void store.ensureNamespace(ns());
-
-    return () => {
-        const text = store.translateKey(ns(), props.k, props.params, props.target);
-        if (props.components) {
-            return <>{renderRich(text, props.components)}</>;
-        }
-        return <>{text}</>;
-    };
-});
-
-// ── use:t directive ─────────────────────────────────────────────────────────
 
 /** `use:t` value: a bare key, or `[key, params?, { ns?, target? }?]`. */
 export type TDirectiveValue =
@@ -101,6 +38,10 @@ function nsOf(store: I18nStore, value: TDirectiveValue): string {
     return typeof value === 'string' ? store.defaultNamespace : value[2]?.ns ?? store.defaultNamespace;
 }
 
+function targetOf(value: TDirectiveValue): string | undefined {
+    return typeof value === 'string' ? undefined : value[2]?.target;
+}
+
 /**
  * Build the `use:t` directive bound to an app's i18n store, resolved lazily via
  * `app.runWithContext` so it is the same app-scoped instance components receive.
@@ -109,7 +50,7 @@ function createTDirective(getStore: () => I18nStore) {
     return defineDirective<TDirectiveValue, HTMLElement>({
         mounted(el, binding) {
             const store = getStore();
-            void store.ensureNamespace(nsOf(store, binding.value));
+            void store.ensureNamespace(nsOf(store, binding.value), targetOf(binding.value));
             const state: TState = {
                 current: binding.value,
                 paint: () => {
@@ -150,4 +91,7 @@ export function i18nDirectives(): Plugin {
     };
 }
 
+// Convenience re-exports so DOM apps can import everything from one place.
+export { T, renderRich } from './component.js';
+export type { TProps, RichComponents } from './component.js';
 export { createI18n } from './plugin.js';

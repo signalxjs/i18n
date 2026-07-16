@@ -165,16 +165,22 @@ export interface DetectionOptions {
     urlParam?: string;
     /** Also read the first path segment (`/en/…`) as a locale. Default false. */
     pathLocale?: boolean;
+    /**
+     * Custom detectors placed at the FRONT of the chain (highest priority).
+     * This is how non-web runtimes (lynx, terminal) inject a native locale source
+     * through the same `Detector` interface — no renderer-specific fork.
+     */
+    detectors?: Detector[];
     /** Request/environment context (server passes headers/cookies/url here). */
     context?: DetectionContext;
 }
 
 const DEFAULT_ORDER: NonNullable<DetectionOptions['order']> = ['url', 'cookie', 'settings', 'browser'];
 
-/** Build the ordered detector list from `DetectionOptions`. */
+/** Build the ordered detector list from `DetectionOptions` (custom detectors first). */
 export function createDetectors(options: DetectionOptions = {}): Detector[] {
     const order = options.order ?? DEFAULT_ORDER;
-    return order.map(name => {
+    const builtins = order.map(name => {
         switch (name) {
             case 'url':
                 return urlDetector({ param: options.urlParam, path: options.pathLocale });
@@ -186,4 +192,5 @@ export function createDetectors(options: DetectionOptions = {}): Detector[] {
                 return browserDetector;
         }
     });
+    return [...(options.detectors ?? []), ...builtins];
 }

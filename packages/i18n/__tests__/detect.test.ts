@@ -97,4 +97,11 @@ describe('detectLocale — ordered chain', () => {
         const ctx = { cookies: { locale: 'sv' }, headers: { 'accept-language': 'de' } };
         expect(detectLocale(createDetectors({ order: ['browser', 'cookie'] }), ctx, supported, 'en')).toBe('de');
     });
+
+    it('places injected custom detectors first (native-runtime path)', () => {
+        // e.g. a lynx app injects a detector reading its native device locale.
+        const nativeDetector = { name: 'native', detect: () => 'de' };
+        const ctx = { cookies: { locale: 'sv' } }; // built-in would say sv
+        expect(detectLocale(createDetectors({ detectors: [nativeDetector] }), ctx, supported, 'en')).toBe('de');
+    });
 });
