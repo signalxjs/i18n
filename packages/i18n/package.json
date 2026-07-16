@@ -24,8 +24,12 @@
             "import": "./dist/vite.js"
         }
     },
+    "bin": {
+        "sigx-i18n": "bin/sigx-i18n.mjs"
+    },
     "files": [
-        "dist"
+        "dist",
+        "bin"
     ],
     "engines": {
         "node": "^20.19.0 || >=22.12.0"
