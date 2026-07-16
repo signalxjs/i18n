@@ -1,0 +1,14 @@
+[
+  {
+    "name": "@sigx/i18n (core)",
+    "path": "packages/i18n/dist/index.js",
+    "ignore": ["@sigx/store", "@sigx/reactivity", "@sigx/runtime-core", "sigx"],
+    "limit": "5 KB"
+  },
+  {
+    "name": "@sigx/i18n/dom",
+    "path": "packages/i18n/dist/dom.js",
+    "ignore": ["@sigx/store", "@sigx/reactivity", "@sigx/runtime-core", "@sigx/runtime-dom", "sigx"],
+    "limit": "3 KB"
+  }
+]
