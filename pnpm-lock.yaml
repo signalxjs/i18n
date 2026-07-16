@@ -11,6 +11,9 @@ importers:
       '@size-limit/preset-small-lib':
         specifier: ^11
         version: 11.2.0(size-limit@11.2.0)
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.5
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260510.1
         version: 7.0.0-dev.20260510.1
