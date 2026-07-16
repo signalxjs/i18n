@@ -28,3 +28,19 @@ export { translate, getMessage, localeChain, targetChain, matchLocale } from './
 
 export { useI18n, useI18nConfig } from './store.js';
 export type { I18nStore, I18nRuntimeConfig, LocaleLoader } from './store.js';
+
+export {
+    detectLocale,
+    createDetectors,
+    findSupported,
+    parseAcceptLanguage,
+    parseCookie,
+    settingsDetector,
+    browserDetector,
+    cookieDetector,
+    urlDetector
+} from './detect.js';
+export type { Detector, DetectionContext, DetectionOptions } from './detect.js';
+
+export { installPersistSSR } from './persist-ssr.js';
+export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';

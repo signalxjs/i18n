@@ -1,15 +1,24 @@
 /** Tests for the reactive @sigx/i18n store (via a real app DI context). */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { defineApp, jsx } from '@sigx/runtime-core';
 import { effect } from '@sigx/reactivity';
 import { useI18n, useI18nConfig, type I18nRuntimeConfig } from '../src/store.js';
 
+// These tests exercise core store logic in isolation: detection and persistence
+// (Phase 2) are disabled by default so the initial locale is deterministically
+// the fallback and no state leaks between tests via localStorage.
 function setup(config: I18nRuntimeConfig) {
+    const full: I18nRuntimeConfig = { detect: false, persistence: false, ...config };
     const app = defineApp(jsx('div', {}));
-    app.defineProvide(useI18nConfig, () => config);
+    app.defineProvide(useI18nConfig, () => full);
     const store = app.runWithContext(() => useI18n());
     return { app, store };
 }
+
+beforeEach(() => {
+    localStorage.clear();
+    delete (window as unknown as { __SIGX_ASYNC__?: unknown }).__SIGX_ASYNC__;
+});
 
 const flush = () => new Promise(r => setTimeout(r, 0));
 
