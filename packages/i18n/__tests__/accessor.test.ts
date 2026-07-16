@@ -1,0 +1,127 @@
+/** Tests for the useTranslation proxy accessor + createI18n plugin + useLocale. */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { defineApp, jsx } from '@sigx/runtime-core';
+import { computed, effect } from '@sigx/reactivity';
+import { createI18n, type I18nOptions } from '../src/plugin.js';
+import { useTranslation, useLocale } from '../src/accessor.js';
+import { useI18n } from '../src/store.js';
+
+const opts = (over: Partial<I18nOptions> = {}): I18nOptions => ({
+    fallbackLocale: 'en',
+    supported: ['en', 'sv'],
+    detect: false,
+    persistence: false,
+    ...over
+});
+
+/** Build an app with the plugin installed and resolve the store + a translator. */
+function scenario(over: Partial<I18nOptions> = {}) {
+    const app = defineApp(jsx('div', {}));
+    app.use(createI18n(opts(over)));
+    return app.runWithContext(() => {
+        const store = useI18n();
+        return { store, t: useTranslation('cart'), locale: useLocale() };
+    });
+}
+
+beforeEach(() => {
+    localStorage.clear();
+    delete (window as unknown as { __SIGX_ASYNC__?: unknown }).__SIGX_ASYNC__;
+});
+
+describe('accessor — three forms are equivalent', () => {
+    it('t(key,params) === t.a.b(params) === String(t.a.b) === `${t.a.b}`', () => {
+        const { store, t } = scenario();
+        store.addMessages('', 'en', 'cart', {
+            summary: { title: 'Your cart' },
+            items: { one: '# item', other: '# items' }
+        });
+
+        expect(t('summary.title')).toBe('Your cart');
+        expect(t.summary.title()).toBe('Your cart');
+        expect(String(t.summary.title)).toBe('Your cart');
+        expect(`${t.summary.title}`).toBe('Your cart');
+
+        expect(t.items({ count: 3 })).toBe('3 items');
+        expect(t('items', { count: 1 })).toBe('1 item');
+    });
+
+    it('falls back to the master locale through the accessor', async () => {
+        const { store, t, locale } = scenario();
+        store.addMessages('', 'en', 'cart', { only_en: 'English' });
+        store.addMessages('', 'sv', 'cart', {});
+        await locale.setLocale('sv');
+        expect(t.only_en()).toBe('English');
+    });
+});
+
+describe('accessor — reactivity', () => {
+    it('the callable form re-runs a computed on locale change', async () => {
+        const { store, t, locale } = scenario();
+        store.addMessages('', 'en', 'cart', { hi: 'Hi' });
+        store.addMessages('', 'sv', 'cart', { hi: 'Hej' });
+
+        const c = computed(() => t.hi());
+        expect(c.value).toBe('Hi');
+        await locale.setLocale('sv');
+        expect(c.value).toBe('Hej');
+    });
+
+    it('the bare-coercion form re-runs an effect on locale change', async () => {
+        const { store, t, locale } = scenario();
+        store.addMessages('', 'en', 'cart', { hi: 'Hi' });
+        store.addMessages('', 'sv', 'cart', { hi: 'Hej' });
+
+        const seen: string[] = [];
+        const stop = effect(() => seen.push(`${t.hi}`)); // template-literal coercion
+        expect(seen).toEqual(['Hi']);
+        await locale.setLocale('sv');
+        expect(seen).toEqual(['Hi', 'Hej']);
+        stop.stop();
+    });
+});
+
+describe('useLocale controls', () => {
+    it('exposes a reactive locale + setLocale/target', async () => {
+        const { locale } = scenario();
+        expect(locale.locale).toBe('en');
+        expect(locale.target).toBe('');
+        await locale.setLocale('sv');
+        expect(locale.locale).toBe('sv');
+    });
+});
+
+describe('target override on useTranslation', () => {
+    it('reads from an explicit target scope (with extends base)', () => {
+        const app = defineApp(jsx('div', {}));
+        app.use(createI18n(opts({ targets: { admin: { extends: 'common' }, common: {} } })));
+        const { store, t } = app.runWithContext(() => {
+            const store = useI18n();
+            return { store, t: useTranslation('nav', { target: 'admin' }) };
+        });
+        store.addMessages('common', 'en', 'nav', { home: 'Home' });
+        store.addMessages('admin', 'en', 'nav', { dash: 'Dashboard' });
+        expect(t.home()).toBe('Home'); // inherited via extends
+        expect(t.dash()).toBe('Dashboard');
+    });
+});
+
+describe('lazy namespace load via useTranslation', () => {
+    it('triggers a loader fetch for the requested namespace', async () => {
+        const seen: string[] = [];
+        const load = async (_t: string, _l: string, ns: string) => {
+            seen.push(ns);
+            return { greeting: 'Hello' };
+        };
+        const app = defineApp(jsx('div', {}));
+        app.use(createI18n(opts({ load })));
+        const { store, t } = app.runWithContext(() => {
+            const store = useI18n();
+            return { store, t: useTranslation('greetings') };
+        });
+        await store.whenReady;
+        await Promise.resolve();
+        expect(seen).toContain('greetings');
+        expect(t.greeting()).toBe('Hello');
+    });
+});

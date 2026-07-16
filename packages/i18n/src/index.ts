@@ -44,3 +44,9 @@ export type { Detector, DetectionContext, DetectionOptions } from './detect.js';
 
 export { installPersistSSR } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
+
+export { useTranslation, useLocale, createTranslator } from './accessor.js';
+export type { Translator, TranslatorNode, LocaleControls } from './accessor.js';
+
+export { createI18n } from './plugin.js';
+export type { I18nOptions } from './plugin.js';
