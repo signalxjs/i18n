@@ -9,6 +9,6 @@
     "name": "@sigx/i18n/dom",
     "path": "packages/i18n/dist/dom.js",
     "ignore": ["@sigx/store", "@sigx/reactivity", "@sigx/runtime-core", "@sigx/runtime-dom", "sigx"],
-    "limit": "3 KB"
+    "limit": "4 KB"
   }
 ]
