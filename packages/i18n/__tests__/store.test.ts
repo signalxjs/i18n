@@ -91,6 +91,35 @@ describe('store — lazy namespace loading', () => {
     });
 });
 
+describe('store — missing-key warnings', () => {
+    it('stays silent for a missing key while a load is in flight, warns once after', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        let release!: () => void;
+        const gate = new Promise<Record<string, never>>(r => {
+            release = () => r({});
+        });
+        const { store } = setup({
+            fallbackLocale: 'en',
+            supported: ['en'],
+            namespaces: ['common'],
+            load: () => gate // never resolves until released → inflight stays > 0
+        });
+
+        // During loading: reading a missing key must NOT warn (normal async window).
+        store.translateKey('common', 'nope');
+        expect(warn).not.toHaveBeenCalled();
+
+        release();
+        await store.whenReady;
+        await new Promise(r => setTimeout(r, 0));
+
+        // After loads settle: a genuinely missing key warns exactly once (deduped).
+        expect(store.translateKey('common', 'nope')).toBe('nope');
+        store.translateKey('common', 'nope');
+        expect(warn).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('store — targets', () => {
     it('resolves through the extends base and switches target', async () => {
         const { store } = setup({

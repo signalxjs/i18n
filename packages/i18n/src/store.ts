@@ -216,6 +216,26 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         return ensureScope(target, ns);
     }
 
+    // Missing-key handling: a key that resolves to nothing WHILE catalogs are
+    // still loading is normal (the async window before the JSON arrives) — never
+    // warn for it, or a first paint spams the console once per reactive read. We
+    // only surface a genuinely missing key after loads settle, and only once.
+    const warnedMissing = new Set<string>();
+    const onMissing: TranslateConfig['onMissing'] = info => {
+        if (config.onMissing) return config.onMissing(info);
+        if (__DEV__ && inflight.size === 0) {
+            const wk = `${info.target} ${info.locale} ${info.namespace} ${info.key}`;
+            if (!warnedMissing.has(wk)) {
+                warnedMissing.add(wk);
+                console.warn(
+                    `[@sigx/i18n] missing translation "${info.key}" ` +
+                    `(ns=${info.namespace}, locale=${info.locale}, target=${info.target || 'default'}).`
+                );
+            }
+        }
+        return info.key;
+    };
+
     /**
      * Reactive translation. A plain method (NOT an action) so reads of
      * `state.locale`/`state.messages` happen in the caller's tracking scope and
@@ -232,7 +252,7 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
             localeFallbacks: config.localeFallbacks,
             targets: config.targets,
             formatter,
-            onMissing: config.onMissing
+            onMissing
         };
         return translate(
             state.messages,

@@ -88,16 +88,20 @@ export function createTranslator(
         };
 
         return new Proxy(callable, {
-            get(target, prop, receiver) {
+            get(_target, prop) {
                 if (typeof prop === 'symbol') {
-                    // Coercion to string (JSX text, `${}`, String()) resolves the
+                    // Coercion to string (`${}`, String(), attributes) resolves the
                     // key with no params — this powers the bare `t.a.b` form.
                     if (prop === Symbol.toPrimitive) return () => resolve(path);
-                    return Reflect.get(target, prop, receiver);
+                    // Never iterable/thenable: keeps the node from being mistaken
+                    // for a children array or a promise by a renderer.
+                    return undefined;
                 }
                 if (prop === 'toString' || prop === 'valueOf') return () => resolve(path);
-                // Not a thenable — guard so `await`/Promise.resolve won't try to chain it.
-                if (prop === 'then') return undefined;
+                // Renderer/promise probes that must NOT mint a child node (else the
+                // node is mistaken for a vnode). These are never valid as the FIRST
+                // segment of a key; deeper segments (`t.user.name`) are unaffected.
+                if (prop === 'then' || prop === '$$typeof' || prop === 'nodeType') return undefined;
                 return makeNode([...path, prop]);
             }
         }) as unknown as TranslatorNode;

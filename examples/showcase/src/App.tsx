@@ -5,6 +5,9 @@ import { T, useTranslation, useLocale } from '@sigx/i18n';
  * Renders TWO targets at once (`marketing` + `app`), both sharing the `common`
  * base — each lazy-loads only its own JSON. Shows every binding form, plurals,
  * number/date formatting, master fallback, detection and persistence.
+ *
+ * JSX-child rule: use the CALL form `t.x()` (or `<T>`) as element children — the
+ * bare `t.x` form is for attributes / template literals / `String()`.
  */
 export const App = component(() => {
     const loc = useLocale();
@@ -18,7 +21,7 @@ export const App = component(() => {
         <>
             <header class="row" style="justify-content: space-between">
                 <div>
-                    <h1>{nav.brand}</h1>
+                    <h1>{nav.brand()}</h1>
                     {/* accessor call form with a param */}
                     <div class="muted">{nav.greeting({ name: 'Andreas' })}</div>
                 </div>
@@ -30,7 +33,7 @@ export const App = component(() => {
                     <button aria-pressed={loc.locale === 'sv'} onClick={() => loc.setLocale('sv')}>
                         SV
                     </button>
-                    {loc.loading && <span class="muted">loading…</span>}
+                    {loc.loading ? <span class="muted">loading…</span> : null}
                 </div>
             </header>
 
@@ -47,7 +50,7 @@ export const App = component(() => {
                     <strong>
                         <T k="title" ns="home" target="marketing" />
                     </strong>
-                    <p class="muted">{home.subtitle}</p>
+                    <p class="muted">{home.subtitle()}</p>
                     <p>{home.users({ count: 1337 })}</p>
                     {/* rich interpolation via components (function form) */}
                     <p>
@@ -58,7 +61,7 @@ export const App = component(() => {
                             components={{ a: c => <a href="#terms">{c}</a> }}
                         />
                     </p>
-                    <button>{home.cta}</button>
+                    <button>{home.cta()}</button>
                 </section>
 
                 <section class="card">
@@ -76,8 +79,10 @@ export const App = component(() => {
             </div>
 
             <p class="muted" style="margin-top:1.5rem">
-                Accessor forms all resolve the same key: bare <b>{nav.home}</b>, call{' '}
-                <b>{nav.home()}</b>, string-key <b>{nav('home')}</b>.
+                Accessor forms all resolve the same key — as a JSX child use the call form{' '}
+                <b>{nav.home()}</b> or string-key <b>{nav('home')}</b>; the bare form{' '}
+                <code>{'{t.nav.home}'}</code> is for attributes/strings (this text's{' '}
+                <span title={nav.home}>title</span> uses it).
             </p>
         </>
     );

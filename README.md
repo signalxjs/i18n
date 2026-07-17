@@ -39,10 +39,15 @@ const app = defineApp(Root).use(createI18n({
 
 // in a component
 const t = useTranslation('cart');
-t.summary.title            // bare form — reads as the translated string
 t.items({ count: 3 })      // callable form — interpolation / plural params
 t('items', { count: 3 })   // string-key form — no build plugin required
+t.summary.title            // bare form — coerces to the string (attributes / templates)
 ```
+
+**In JSX children use the call form** (`{t.summary.title()}`) or the `<T>`
+component — a sigx renderer inspects object children as vnodes, so a bare
+accessor node can't be a direct child. The bare form is for attributes
+(`title={t.summary.title}`) and template literals (`` `${t.user.name}` ``).
 
 ## Packages / entries
 
@@ -61,8 +66,8 @@ they run on every sigx renderer unchanged. On **lynx**, place them inside a
 `@sigx/lynx-storage` for persistence:
 
 ```tsx
-// lynx
-<text>{t.cart.title}</text>
+// lynx — call form as a JSX child; place inside a <text> host
+<text>{t.cart.title()}</text>
 <text><T k="cart.items" params={{ count }} /></text>
 
 app.use(createI18n({

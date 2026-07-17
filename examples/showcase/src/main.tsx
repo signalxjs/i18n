@@ -3,6 +3,17 @@ import { createI18n } from '@sigx/i18n';
 import { i18nDirectives } from '@sigx/i18n/dom';
 import { App } from './App';
 
+// Eagerly-globbed catalog loaders — Vite maps every existing JSON to a lazy
+// import. Looking a path up (instead of a bare `import(dynamic)`) means a
+// missing (target, locale, ns) — e.g. a namespace that only lives in one target,
+// probed via the `extends` chain — resolves to an empty catalog instead of
+// throwing Vite's "Unknown variable dynamic import".
+const catalogs = import.meta.glob('./locales/**/*.json');
+const loadCatalog = (target: string, locale: string, ns: string) => {
+    const loader = catalogs[`./locales/${target}/${locale}/${ns}.json`];
+    return loader ? loader() : Promise.resolve({});
+};
+
 defineApp(<App />)
     .use(
         createI18n({
@@ -20,8 +31,9 @@ defineApp(<App />)
             // url (?lang=sv) > cookie > browser; the chosen locale persists to localStorage.
             detection: { order: ['url', 'cookie', 'browser'] },
             persistence: { storageKey: 'sigx:i18n:showcase' },
-            // Vite includes every matching JSON; each (target, locale, ns) is its own chunk.
-            load: (target, locale, ns) => import(`./locales/${target}/${locale}/${ns}.json`)
+            // Each existing (target, locale, ns) is its own lazy chunk; missing
+            // combos resolve empty so the fallback chain stays quiet.
+            load: loadCatalog
         })
     )
     .use(i18nDirectives())

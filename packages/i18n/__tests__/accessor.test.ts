@@ -81,6 +81,23 @@ describe('accessor — reactivity', () => {
     });
 });
 
+describe('accessor is renderer-safe (regression: mistaken for a vnode)', () => {
+    it('hides framework/promise probe keys and is neither thenable nor iterable', () => {
+        const { t } = scenario();
+        const node = t.some.nested.key as unknown as Record<PropertyKey, unknown>;
+        // A sigx renderer probes object children for these; the node must not
+        // answer with a child (which made it look like a vnode and crashed render).
+        expect(node.then).toBeUndefined();
+        expect(node.$$typeof).toBeUndefined();
+        expect(node.nodeType).toBeUndefined();
+        expect((node as { [Symbol.iterator]?: unknown })[Symbol.iterator]).toBeUndefined();
+        expect(() => Promise.resolve(node as unknown)).not.toThrow();
+        // …but it still resolves as a string via call + coercion.
+        expect(typeof (t.some.nested.key as unknown as () => string)()).toBe('string');
+        expect(typeof `${t.some.nested.key}`).toBe('string');
+    });
+});
+
 describe('useLocale controls', () => {
     it('exposes a reactive locale + setLocale/target', async () => {
         const { locale } = scenario();
