@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed / removed
+- **Removed the "target" axis.** The model is now `messages[locale][namespace]`.
+  Lazy namespace loading already gives the per-surface payload split targets were
+  for (a namespace loads only when first used). Use **hierarchical namespace
+  names** (`admin/users`) for organisation. Dropped `setTarget`/`loadTarget`,
+  `extends`, `{ target }` options, and the target level from the store, loader
+  (`load(locale, ns)`), server translator, manifest, and generated `Schema`.
+- **Removed the `use:t` directive and the `@sigx/i18n/dom` entry.** It could
+  freeze the renderer under (dynamically-mounted component + async loader +
+  `setLocale`). The `<T>` component (in the core entry) and the accessor cover the
+  same ground, are renderer-agnostic, and are the recommended bindings.
+
 ### Added
 - **Many concurrent targets:** the store tracks active `(target, namespace)`
   scopes, so several targets load and render at once; `setLocale` reloads every

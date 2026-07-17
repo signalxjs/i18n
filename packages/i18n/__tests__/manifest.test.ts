@@ -26,17 +26,17 @@ describe('flatten + extractParams', () => {
 });
 
 const entries = (): CatalogEntry[] => [
-    { target: '', locale: 'en', namespace: 'cart', catalog: { title: 'Cart', items: { one: '# item', other: '# items' }, hi: 'Hi {name}' } },
-    { target: '', locale: 'sv', namespace: 'cart', catalog: { title: 'Kundvagn', items: { one: '# vara', other: '# varor' }, hi: 'Hej {name}' } }
+    { locale: 'en', namespace: 'cart', catalog: { title: 'Cart', items: { one: '# item', other: '# items' }, hi: 'Hi {name}' } },
+    { locale: 'sv', namespace: 'cart', catalog: { title: 'Kundvagn', items: { one: '# vara', other: '# varor' }, hi: 'Hej {name}' } }
 ];
 
 describe('buildManifest', () => {
-    it('derives targets/locales/namespaces + master keys with params', () => {
+    it('derives locales/namespaces + master keys with params', () => {
         const m = buildManifest(entries(), 'en');
         expect(m.locales).toEqual(['en', 'sv']);
         expect(m.namespaces).toEqual(['cart']);
-        expect(m.messages['']['cart']['hi']).toEqual({ name: 'string' });
-        expect(m.messages['']['cart']['items']).toEqual({ count: 'number' });
+        expect(m.messages['cart']['hi']).toEqual({ name: 'string' });
+        expect(m.messages['cart']['items']).toEqual({ count: 'number' });
     });
 });
 

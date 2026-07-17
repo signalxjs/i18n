@@ -17,15 +17,11 @@ import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Plugin } from 'vite';
 import { buildManifest, checkCatalogs, generateDts, formatReport, scanDir, type CheckResult } from './manifest.js';
-import type { TargetDef } from './types.js';
-
 export interface I18nViteOptions {
-    /** Catalog root: `<localesDir>/[<target>/]<locale>/<namespace>.json`. */
+    /** Catalog root: `<localesDir>/<locale>/<namespace>.json` (namespaces may be nested). */
     localesDir: string;
     /** Master locale — source of truth for which keys must exist. */
     masterLocale: string;
-    /** Target graph (enables 3-level `target/locale/ns.json` layout). */
-    targets?: Record<string, TargetDef>;
     /** Where to write the generated `.d.ts`. Default `<localesDir>/../i18n.gen.d.ts`. */
     dtsOutFile?: string;
     /** Emit the generated types. Default true. */
@@ -46,7 +42,7 @@ function dtsPath(options: I18nViteOptions): string {
 
 /** Run the completeness check over the catalog tree on disk. */
 export async function runI18nCheck(options: I18nViteOptions): Promise<CheckResult> {
-    const entries = await scanDir(options.localesDir, { targets: options.targets });
+    const entries = await scanDir(options.localesDir);
     return checkCatalogs(entries, {
         masterLocale: options.masterLocale,
         strict: options.strict,
@@ -57,7 +53,7 @@ export async function runI18nCheck(options: I18nViteOptions): Promise<CheckResul
 
 /** Generate the `.d.ts` and write it (only when the content changed). Returns the path. */
 export async function writeI18nTypes(options: I18nViteOptions): Promise<string> {
-    const entries = await scanDir(options.localesDir, { targets: options.targets });
+    const entries = await scanDir(options.localesDir);
     const manifest = buildManifest(entries, options.masterLocale);
     const content = generateDts(manifest);
     const out = dtsPath(options);
@@ -110,9 +106,15 @@ export function i18n(options: I18nViteOptions): Plugin {
             await runGate(msg => this.error(msg));
         },
 
-        configureServer(server) {
+        async configureServer(server) {
             const dir = resolve(options.localesDir);
+            // Generate types up front, then tell Vite's core watcher to IGNORE the
+            // generated `.d.ts` — otherwise writing it triggers a full page reload
+            // (and a reload storm at dev startup). We react to catalog `.json`
+            // changes ourselves below.
+            await regenerate();
             server.watcher.add(dir);
+            server.watcher.unwatch(out);
             const onChange = async (file: string) => {
                 const norm = resolve(file);
                 if (!norm.startsWith(dir) || !norm.endsWith('.json') || norm === out) return;

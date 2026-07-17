@@ -1,6 +1,6 @@
-/** Tests for @sigx/i18n pure translation core (fallback + targets). */
+/** Tests for @sigx/i18n pure translation core (master fallback). */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { translate, getMessage, localeChain, targetChain } from '../src/translate.js';
+import { translate, getMessage, localeChain } from '../src/translate.js';
 import { lightweightFormatter } from '../src/formatter.js';
 import type { MessageTree, TranslateConfig } from '../src/types.js';
 
@@ -43,29 +43,12 @@ describe('localeChain', () => {
     });
 });
 
-describe('targetChain', () => {
-    it('follows extends ancestry', () => {
-        expect(targetChain('admin', { admin: { extends: 'common' }, common: {} })).toEqual([
-            'admin',
-            'common'
-        ]);
-    });
-    it('is cycle-safe', () => {
-        expect(targetChain('a', { a: { extends: 'b' }, b: { extends: 'a' } })).toEqual(['a', 'b']);
-    });
-    it('handles the default (empty) target', () => {
-        expect(targetChain('')).toEqual(['']);
-    });
-});
-
 describe('translate — master fallback', () => {
     const tree: MessageTree = {
-        '': {
-            en: { common: { hi: 'Hi', only_en: 'English only' } },
-            sv: { common: { hi: 'Hej' } }
-        }
+        en: { common: { hi: 'Hi', only_en: 'English only' } },
+        sv: { common: { hi: 'Hej' } }
     };
-    const scope = (locale: string) => ({ target: '', locale, namespace: 'common' });
+    const scope = (locale: string) => ({ locale, namespace: 'common' });
 
     it('uses the requested locale when present', () => {
         expect(translate(tree, 'hi', undefined, scope('sv'), cfg())).toBe('Hej');
@@ -89,52 +72,24 @@ describe('translate — master fallback', () => {
     it('honours a custom onMissing handler', () => {
         const onMissing = vi.fn(() => '∅');
         expect(translate(tree, 'nope', undefined, scope('sv'), cfg({ onMissing }))).toBe('∅');
-        expect(onMissing).toHaveBeenCalledWith({
-            key: 'nope',
-            namespace: 'common',
-            locale: 'sv',
-            target: ''
-        });
+        expect(onMissing).toHaveBeenCalledWith({ key: 'nope', namespace: 'common', locale: 'sv' });
     });
 });
 
-describe('translate — targets', () => {
+describe('translate — hierarchical namespaces', () => {
     const tree: MessageTree = {
-        common: { en: { nav: { home: 'Home' } }, sv: { nav: { home: 'Hem' } } },
-        admin: { en: { nav: { dash: 'Dashboard' } } }
+        en: { 'admin/users': { title: 'Users' } }
     };
-    const config = cfg({ targets: { admin: { extends: 'common' }, common: {} } });
-
-    it('resolves a key defined only in the extends base', () => {
-        // admin has no `home`; inherits it from common
-        expect(translate(tree, 'home', undefined, { target: 'admin', locale: 'sv', namespace: 'nav' }, config)).toBe(
-            'Hem'
-        );
-    });
-
-    it('prefers the active target over the base', () => {
-        expect(
-            translate(tree, 'dash', undefined, { target: 'admin', locale: 'en', namespace: 'nav' }, config)
-        ).toBe('Dashboard');
-    });
-
-    it('does not leak base-only keys the other direction', () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        // common cannot see admin's `dash`
-        expect(
-            translate(tree, 'dash', undefined, { target: 'common', locale: 'en', namespace: 'nav' }, config)
-        ).toBe('dash');
-        warn.mockRestore();
+    it('resolves a key under a nested namespace path', () => {
+        expect(translate(tree, 'title', undefined, { locale: 'en', namespace: 'admin/users' }, cfg())).toBe('Users');
     });
 });
 
-describe('translate — plural via store path', () => {
+describe('translate — plurals', () => {
     const tree: MessageTree = {
-        '': { en: { cart: { items: { one: '# item', other: '# items' } } } }
+        en: { cart: { items: { one: '# item', other: '# items' } } }
     };
     it('formats plurals found through fallback in the found locale', () => {
-        expect(
-            translate(tree, 'items', { count: 3 }, { target: '', locale: 'de', namespace: 'cart' }, cfg())
-        ).toBe('3 items');
+        expect(translate(tree, 'items', { count: 3 }, { locale: 'de', namespace: 'cart' }, cfg())).toBe('3 items');
     });
 });

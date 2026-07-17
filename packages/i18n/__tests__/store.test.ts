@@ -25,8 +25,8 @@ const flush = () => new Promise(r => setTimeout(r, 0));
 describe('store — translation + reactivity', () => {
     it('translates injected messages and reacts to setLocale', async () => {
         const { store } = setup({ fallbackLocale: 'en', supported: ['en', 'sv'] });
-        store.addMessages('', 'en', 'common', { hi: 'Hi' });
-        store.addMessages('', 'sv', 'common', { hi: 'Hej' });
+        store.addMessages('en', 'common', { hi: 'Hi' });
+        store.addMessages('sv', 'common', { hi: 'Hej' });
 
         const seen: string[] = [];
         const stop = effect(() => seen.push(store.translateKey('common', 'hi')));
@@ -40,8 +40,8 @@ describe('store — translation + reactivity', () => {
 
     it('falls back to the master locale reactively when a key is untranslated', async () => {
         const { store } = setup({ fallbackLocale: 'en', supported: ['en', 'sv'] });
-        store.addMessages('', 'en', 'common', { only_en: 'English' });
-        store.addMessages('', 'sv', 'common', {});
+        store.addMessages('en', 'common', { only_en: 'English' });
+        store.addMessages('sv', 'common', {});
         await store.setLocale('sv');
         expect(store.translateKey('common', 'only_en')).toBe('English');
     });
@@ -65,7 +65,7 @@ describe('store — translation + reactivity', () => {
 
 describe('store — lazy namespace loading', () => {
     it('loads a namespace via the loader on ensureNamespace, once', async () => {
-        const load = vi.fn(async (_t: string, locale: string, ns: string) => ({
+        const load = vi.fn(async (locale: string, ns: string) => ({
             greet: locale === 'sv' ? 'Hej' : 'Hi',
             _ns: ns
         }));
@@ -73,7 +73,7 @@ describe('store — lazy namespace loading', () => {
 
         await store.ensureNamespace('cart');
         expect(store.translateKey('cart', 'greet')).toBe('Hi');
-        // en (active==fallback) loaded once for the default target
+        // en (active==fallback) loaded once
         expect(load).toHaveBeenCalledTimes(1);
 
         await store.ensureNamespace('cart'); // idempotent
@@ -81,7 +81,7 @@ describe('store — lazy namespace loading', () => {
     });
 
     it('loads active + fallback locale on setLocale and keeps translating', async () => {
-        const load = vi.fn(async (_t: string, locale: string) => ({ greet: locale === 'sv' ? 'Hej' : 'Hi' }));
+        const load = vi.fn(async (locale: string) => ({ greet: locale === 'sv' ? 'Hej' : 'Hi' }));
         const { store } = setup({ fallbackLocale: 'en', supported: ['en', 'sv'], namespaces: ['common'], load });
 
         await store.ensureNamespace('common');
@@ -120,18 +120,10 @@ describe('store — missing-key warnings', () => {
     });
 });
 
-describe('store — targets', () => {
-    it('resolves through the extends base and switches target', async () => {
-        const { store } = setup({
-            fallbackLocale: 'en',
-            targets: { admin: { extends: 'common' }, common: {} }
-        });
-        store.addMessages('common', 'en', 'nav', { home: 'Home' });
-        store.addMessages('admin', 'en', 'nav', { dash: 'Dashboard' });
-
-        expect(store.translateKey('nav', 'home', undefined, 'admin')).toBe('Home'); // via extends
-        await store.setTarget('admin');
-        expect(store.target).toBe('admin');
-        expect(store.translateKey('nav', 'dash')).toBe('Dashboard');
+describe('store — hierarchical namespaces', () => {
+    it('resolves keys under a nested namespace path', () => {
+        const { store } = setup({ fallbackLocale: 'en' });
+        store.addMessages('en', 'admin/users', { title: 'Users' });
+        expect(store.translateKey('admin/users', 'title')).toBe('Users');
     });
 });

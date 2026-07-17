@@ -4,7 +4,7 @@
 
 **Reactive localization for [SignalX](https://sigx.dev/core/).**
 
-Namespaces · master-locale fallback · API-defined targets · SSR-safe · typed keys · easy UI binding
+Namespaces · master-locale fallback · lazy-loaded · SSR-safe · typed keys · easy UI binding
 
 </div>
 
@@ -21,9 +21,9 @@ Full guides, API reference and live examples → **<https://sigx.dev/i18n/>**
 pnpm add @sigx/i18n
 ```
 
-`@sigx/i18n` peers on the sigx runtime (`@sigx/reactivity`, `@sigx/runtime-core`)
-and `@sigx/store`. The `./dom` entry additionally needs `@sigx/runtime-dom` +
-`sigx`; `./vite` needs `vite` + `@sigx/vite`.
+`@sigx/i18n` peers on the sigx runtime (`@sigx/reactivity`, `@sigx/runtime-core`),
+`@sigx/store`, and `sigx` (for the `<T>` component). `./vite` needs `vite` +
+`@sigx/vite`; `./server` has no sigx dependency.
 
 ## Quick start
 
@@ -34,7 +34,8 @@ import { createI18n, useTranslation } from '@sigx/i18n';
 const app = defineApp(Root).use(createI18n({
   fallbackLocale: 'en',
   supported: ['en', 'sv', 'de'],
-  load: (target, locale, ns) => import(`./locales/${target}/${locale}/${ns}.json`),
+  // Namespaces load lazily on first use; nested paths (admin/users) are fine.
+  load: (locale, ns) => import(`./locales/${locale}/${ns}.json`),
 }));
 
 // in a component
@@ -49,12 +50,19 @@ component — a sigx renderer inspects object children as vnodes, so a bare
 accessor node can't be a direct child. The bare form is for attributes
 (`title={t.summary.title}`) and template literals (`` `${t.user.name}` ``).
 
+## Namespaces + lazy loading (no "targets")
+
+Each namespace's JSON loads **only when a component that uses it first renders**,
+so a public surface never downloads an admin-only namespace — the per-surface
+payload split is automatic. Organise per-surface strings with **hierarchical
+namespace names** (`admin/users`, `public/home`); there is no separate "target"
+axis.
+
 ## Packages / entries
 
 | Entry | Purpose |
 |---|---|
-| `@sigx/i18n` | store, `useTranslation` accessor, **`<T>` component**, formatter, detectors, plugin — the universal binding surface (DOM, lynx, terminal, SSR) |
-| `@sigx/i18n/dom` | `use:t` directive — a DOM-only convenience (no cross-renderer twin) |
+| `@sigx/i18n` | store, `useTranslation` accessor, `<T>` component, formatter, detectors, plugin — the universal binding surface (DOM, lynx, terminal, SSR) |
 | `@sigx/i18n/server` | non-reactive `createServerT()` for mail templates & jobs |
 | `@sigx/i18n/vite` | typed-keys codegen + missing-translation build gate + HMR |
 
@@ -75,11 +83,9 @@ app.use(createI18n({
   supported: ['en', 'sv'],
   detection: { detectors: [{ name: 'native', detect: () => readDeviceLocale() }] },
   persistence: { storage: Storage /* from @sigx/lynx-storage */ },
-  load: (target, locale, ns) => import(`./locales/${target}/${locale}/${ns}.json`),
+  load: (locale, ns) => import(`./locales/${locale}/${ns}.json`),
 }));
 ```
-
-`use:t` is DOM-only; on lynx/terminal use the accessor or `<T>`.
 
 ## License
 

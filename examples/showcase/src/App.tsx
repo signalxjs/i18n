@@ -1,89 +1,94 @@
-import { component } from 'sigx';
+import { component, signal } from 'sigx';
 import { T, useTranslation, useLocale } from '@sigx/i18n';
 
 /**
- * Renders TWO targets at once (`marketing` + `app`), both sharing the `common`
- * base — each lazy-loads only its own JSON. Shows every binding form, plurals,
- * number/date formatting, master fallback, detection and persistence.
+ * No `target` anywhere — each section just uses its own namespace, and a
+ * namespace's JSON loads only when its component renders. The "app" section is
+ * hidden behind a toggle so you can watch `en/app/dashboard.json` load in the
+ * Network panel ONLY when it's revealed — never on the initial paint.
  *
- * JSX-child rule: use the CALL form `t.x()` (or `<T>`) as element children — the
- * bare `t.x` form is for attributes / template literals / `String()`.
+ * JSX-child rule: use the call form `t.x()` (or `<T>`) as element children.
  */
-export const App = component(() => {
+
+const Nav = component(() => {
+    const t = useTranslation('nav');
     const loc = useLocale();
-    const nav = useTranslation('nav'); // default target 'common'
-    const home = useTranslation('home', { target: 'marketing' }); // concurrent target
-    const dash = useTranslation('dashboard', { target: 'app' }); // concurrent target
+    return () => (
+        <header class="row" style="justify-content: space-between">
+            <div>
+                <h1>{t.brand()}</h1>
+                <div class="muted">{t.greeting({ name: 'Andreas' })}</div>
+            </div>
+            <div class="row">
+                <span class="muted">locale:</span>
+                <button aria-pressed={loc.locale === 'en'} onClick={() => loc.setLocale('en')}>
+                    EN
+                </button>
+                <button aria-pressed={loc.locale === 'sv'} onClick={() => loc.setLocale('sv')}>
+                    SV
+                </button>
+                {loc.loading ? <span class="muted">loading…</span> : null}
+            </div>
+        </header>
+    );
+});
 
+const MarketingPanel = component(() => {
+    const t = useTranslation('marketing/home');
+    return () => (
+        <section class="card">
+            <h2>marketing/home</h2>
+            <strong>
+                <T k="title" ns="marketing/home" />
+            </strong>
+            <p class="muted">{t.subtitle()}</p>
+            <p>{t.users({ count: 1337 })}</p>
+            <p>
+                <T k="legal" ns="marketing/home" components={{ a: c => <a href="#terms">{c}</a> }} />
+            </p>
+            <button>{t.cta()}</button>
+        </section>
+    );
+});
+
+const AppPanel = component(() => {
+    const t = useTranslation('app/dashboard');
     const now = new Date();
+    return () => (
+        <section class="card">
+            <h2>app/dashboard</h2>
+            <strong>
+                <T k="title" ns="app/dashboard" />
+            </strong>
+            <p>{t.revenue({ amount: 42690 })}</p>
+            <p>{t.updated({ when: now })}</p>
+            <p>{t.items({ count: 3 })}</p>
+        </section>
+    );
+});
 
+export const App = component(() => {
+    const showApp = signal(false);
     return () => (
         <>
-            <header class="row" style="justify-content: space-between">
-                <div>
-                    <h1>{nav.brand()}</h1>
-                    {/* accessor call form with a param */}
-                    <div class="muted">{nav.greeting({ name: 'Andreas' })}</div>
-                </div>
-                <div class="row">
-                    <span class="muted">locale:</span>
-                    <button aria-pressed={loc.locale === 'en'} onClick={() => loc.setLocale('en')}>
-                        EN
-                    </button>
-                    <button aria-pressed={loc.locale === 'sv'} onClick={() => loc.setLocale('sv')}>
-                        SV
-                    </button>
-                    {loc.loading ? <span class="muted">loading…</span> : null}
-                </div>
-            </header>
-
+            <Nav />
             <p class="muted">
-                Two targets rendered together — <code>marketing</code> + <code>app</code> — each
-                downloads only its own catalog, both falling back through the shared{' '}
-                <code>common</code> base and the master locale (English).
+                Each section uses only its own namespace, lazy-loaded on first render — no target
+                axis. Reveal the app section and watch <code>app/dashboard</code> load then, not
+                before.
             </p>
-
             <div class="panels">
-                <section class="card">
-                    <h2>marketing target</h2>
-                    {/* <T> component — universal (works on DOM + lynx) */}
-                    <strong>
-                        <T k="title" ns="home" target="marketing" />
-                    </strong>
-                    <p class="muted">{home.subtitle()}</p>
-                    <p>{home.users({ count: 1337 })}</p>
-                    {/* rich interpolation via components (function form) */}
-                    <p>
-                        <T
-                            k="legal"
-                            ns="home"
-                            target="marketing"
-                            components={{ a: c => <a href="#terms">{c}</a> }}
-                        />
-                    </p>
-                    <button>{home.cta()}</button>
-                </section>
-
-                <section class="card">
-                    <h2>app target</h2>
-                    {/* use:t directive (DOM-only convenience) */}
-                    <strong use:t={['title', undefined, { ns: 'dashboard', target: 'app' }]} />
-                    <p>{dash.revenue({ amount: 42690 })}</p>
-                    <p>{dash.updated({ when: now })}</p>
-                    <p>{dash.items({ count: 3 })}</p>
-                    {/* nav.home resolved from the `app` target via `extends: common` */}
-                    <p class="muted">
-                        nav via extends: <span use:t={['home', undefined, { target: 'app' }]} />
-                    </p>
-                </section>
+                <MarketingPanel />
+                {showApp.value ? (
+                    <AppPanel />
+                ) : (
+                    <section class="card">
+                        <h2>app/dashboard</h2>
+                        <p class="muted">Not loaded yet.</p>
+                        <button onClick={() => (showApp.value = true)}>Reveal app section</button>
+                    </section>
+                )}
             </div>
-
-            <p class="muted" style="margin-top:1.5rem">
-                Accessor forms all resolve the same key — as a JSX child use the call form{' '}
-                <b>{nav.home()}</b> or string-key <b>{nav('home')}</b>; the bare form{' '}
-                <code>{'{t.nav.home}'}</code> is for attributes/strings (this text's{' '}
-                <span title={nav.home}>title</span> uses it).
-            </p>
         </>
     );
-}, { name: 'App' });
+});

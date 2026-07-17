@@ -1,16 +1,14 @@
 import { defineApp } from 'sigx';
 import { createI18n, type LocaleLoader } from '@sigx/i18n';
-import { i18nDirectives } from '@sigx/i18n/dom';
 import { App } from './App';
 
-// Eagerly-globbed catalog loaders — Vite maps every existing JSON to a lazy
-// import. Looking a path up (instead of a bare `import(dynamic)`) means a
-// missing (target, locale, ns) — e.g. a namespace that only lives in one target,
-// probed via the `extends` chain — resolves to an empty catalog instead of
-// throwing Vite's "Unknown variable dynamic import".
+// Vite maps every existing catalog to a lazy import; each `<locale>/<ns>.json`
+// (namespaces may be nested, e.g. `en/app/dashboard.json`) is its own chunk.
+// A namespace loads only when a component that uses it renders → per-surface
+// payload split, no target axis needed.
 const catalogs = import.meta.glob('./locales/**/*.json');
-const loadCatalog: LocaleLoader = (target, locale, ns) => {
-    const loader = catalogs[`./locales/${target}/${locale}/${ns}.json`];
+const loadCatalog: LocaleLoader = (locale, ns) => {
+    const loader = catalogs[`./locales/${locale}/${ns}.json`];
     return (loader ? loader() : Promise.resolve({})) as ReturnType<LocaleLoader>;
 };
 
@@ -19,22 +17,12 @@ defineApp(<App />)
         createI18n({
             fallbackLocale: 'en',
             supported: ['en', 'sv'],
-            // Default scope for un-targeted reads; the panels override per-target.
-            target: 'common',
             defaultNamespace: 'nav',
-            targets: {
-                app: { extends: 'common' },
-                marketing: { extends: 'common' },
-                common: {}
-            },
+            // Only truly-global namespaces are eager; section namespaces load on use.
             namespaces: ['nav'],
-            // url (?lang=sv) > cookie > browser; the chosen locale persists to localStorage.
             detection: { order: ['url', 'cookie', 'browser'] },
             persistence: { storageKey: 'sigx:i18n:showcase' },
-            // Each existing (target, locale, ns) is its own lazy chunk; missing
-            // combos resolve empty so the fallback chain stays quiet.
             load: loadCatalog
         })
     )
-    .use(i18nDirectives())
     .mount('#app');

@@ -75,9 +75,6 @@ importers:
       '@sigx/runtime-core':
         specifier: ^0.10.0
         version: 0.10.0
-      '@sigx/runtime-dom':
-        specifier: ^0.10.0
-        version: 0.10.0
       '@sigx/store':
         specifier: ^0.8.0
         version: 0.8.0(@sigx/reactivity@0.10.0)(@sigx/runtime-core@0.10.0)

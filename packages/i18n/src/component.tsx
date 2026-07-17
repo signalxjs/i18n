@@ -43,7 +43,6 @@ export function renderRich(text: string, components: RichComponents): (string | 
 export type TProps = Define.Prop<'k', string, true> &
     Define.Prop<'params', Params, false> &
     Define.Prop<'ns', string, false> &
-    Define.Prop<'target', string, false> &
     Define.Prop<'components', RichComponents, false>;
 
 /**
@@ -58,12 +57,10 @@ export type TProps = Define.Prop<'k', string, true> &
 export const T = component<TProps>(({ props }) => {
     const store = useI18n();
     const ns = () => props.ns ?? store.defaultNamespace;
-    // Register the requested (target, ns) scope so its catalogs load — passing
-    // props.target means many targets can be rendered concurrently.
-    void store.ensureNamespace(ns(), props.target);
+    void store.ensureNamespace(ns()); // loads the namespace on first use
 
     return () => {
-        const text = store.translateKey(ns(), props.k, props.params, props.target);
+        const text = store.translateKey(ns(), props.k, props.params);
         if (props.components) {
             return <>{renderRich(text, props.components)}</>;
         }

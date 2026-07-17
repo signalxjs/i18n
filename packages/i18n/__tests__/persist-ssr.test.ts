@@ -67,7 +67,7 @@ describe('persistence round-trip', () => {
 describe('SSR state transfer', () => {
     it('seeds locale + messages from the server blob (consume-once) and skips detection', async () => {
         (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
-            'store:i18n': { locale: 'de', target: '', messages: { '': { de: { common: { hi: 'Hallo' } } } } }
+            'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo' } } } }
         };
 
         const store = setup(base());
@@ -91,7 +91,7 @@ describe('no cross-request leak', () => {
         const b = setup(base({ persistence: false }));
         await Promise.all([a.whenReady, b.whenReady]);
 
-        a.addMessages('', 'en', 'c', { x: 'A' });
+        a.addMessages('en', 'c', { x: 'A' });
         await a.setLocale('sv');
 
         expect(a.locale).toBe('sv');

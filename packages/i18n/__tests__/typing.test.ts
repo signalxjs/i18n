@@ -16,8 +16,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, '..'); // packages/i18n
 
 const entries: CatalogEntry[] = [
-    { target: '', locale: 'en', namespace: 'cart', catalog: { title: 'Cart', hi: 'Hi {name}', items: { one: '# item', other: '# items' } } },
-    { target: '', locale: 'sv', namespace: 'cart', catalog: { title: 'Kundvagn', hi: 'Hej {name}', items: { one: '# vara', other: '# varor' } } }
+    { locale: 'en', namespace: 'cart', catalog: { title: 'Cart', hi: 'Hi {name}', items: { one: '# item', other: '# items' } } },
+    { locale: 'sv', namespace: 'cart', catalog: { title: 'Kundvagn', hi: 'Hej {name}', items: { one: '# vara', other: '# varor' } } }
 ];
 
 function run(cmd: string): { ok: boolean; output: string } {

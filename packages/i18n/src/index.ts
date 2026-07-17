@@ -17,14 +17,13 @@ export type {
     Formatter,
     FormatContext,
     MissingInfo,
-    TargetDef,
     ResolveScope,
     TranslateConfig,
     Schema
 } from './types.js';
 
 export { lightweightFormatter, isPluralForms } from './formatter.js';
-export { translate, getMessage, localeChain, targetChain, matchLocale } from './translate.js';
+export { translate, getMessage, localeChain, matchLocale } from './translate.js';
 
 export { useI18n, useI18nConfig } from './store.js';
 export type { I18nStore, I18nRuntimeConfig, LocaleLoader } from './store.js';
@@ -52,7 +51,6 @@ export type {
     TypedTranslator,
     LocaleControls,
     KnownLocale,
-    KnownTarget,
     KnownNamespace,
     KeysForNamespace
 } from './accessor.js';

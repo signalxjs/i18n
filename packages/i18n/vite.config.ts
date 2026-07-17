@@ -3,7 +3,6 @@ import { defineLibConfig } from '@sigx/vite/lib';
 export default defineLibConfig({
     entry: {
         index: 'src/index.ts',
-        dom: 'src/dom.tsx',
         server: 'src/server.ts',
         vite: 'src/vite.ts'
     },

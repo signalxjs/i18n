@@ -11,7 +11,6 @@ export default defineConfig({
         i18n({
             localesDir: 'src/locales',
             masterLocale: 'en',
-            targets: { app: { extends: 'common' }, marketing: { extends: 'common' }, common: {} },
             dtsOutFile: 'src/i18n.gen.d.ts'
         })
     ],

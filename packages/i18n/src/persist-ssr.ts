@@ -16,7 +16,6 @@ import type { Patch, SetupStoreContext } from '@sigx/store';
 /** The subset of i18n state this module reads/writes. */
 export interface PersistSSRState {
     locale: string;
-    target: string;
     // messages is transferred but never persisted to device storage.
     messages: unknown;
 }
@@ -49,8 +48,8 @@ export function installPersistSSR<TState extends PersistSSRState>(
 
     // `pick` keys are guaranteed present by the `PersistSSRState` constraint, but
     // TS can't prove a string literal ∈ keyof a generic subtype — cast is safe.
-    const ssrPick = ['locale', 'target', 'messages'] as Extract<keyof TState, string>[];
-    const persistPick = ['locale', 'target'] as (keyof TState)[];
+    const ssrPick = ['locale', 'messages'] as Extract<keyof TState, string>[];
+    const persistPick = ['locale'] as (keyof TState)[];
 
     // 1) SSR seed first (synchronous): server-rendered locale/target + catalogs.
     const ssrHydrated = doSSR ? ssrState(ctx, slice, { pick: ssrPick }).hydrated : false;

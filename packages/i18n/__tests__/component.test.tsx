@@ -1,10 +1,9 @@
-/** Tests for @sigx/i18n/dom — <T> component + use:t directive (mounted app). */
+/** Tests for the universal <T> translation component (mounted app). */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { component, defineApp } from 'sigx';
 import { createI18n } from '../src/plugin.js';
 import { useI18n } from '../src/store.js';
-import { T } from '../src/index.js'; // <T> is universal — lives in the core entry
-import { i18nDirectives } from '../src/dom.js';
+import { T } from '../src/index.js';
 import type { I18nOptions } from '../src/plugin.js';
 
 const opts: I18nOptions = {
@@ -35,8 +34,8 @@ describe('<T> component', () => {
         const app = defineApp((<Root />) as never);
         app.use(createI18n(opts));
         const store = app.runWithContext(() => useI18n());
-        store.addMessages('', 'en', 'cart', { hi: 'Hi', items: { one: '# item', other: '# items' } });
-        store.addMessages('', 'sv', 'cart', { hi: 'Hej', items: { one: '# vara', other: '# varor' } });
+        store.addMessages('en', 'cart', { hi: 'Hi', items: { one: '# item', other: '# items' } });
+        store.addMessages('sv', 'cart', { hi: 'Hej', items: { one: '# vara', other: '# varor' } });
 
         const container = document.createElement('div');
         document.body.appendChild(container);
@@ -61,7 +60,7 @@ describe('<T> component', () => {
         const app = defineApp((<Root />) as never);
         app.use(createI18n(opts));
         const store = app.runWithContext(() => useI18n());
-        store.addMessages('', 'en', 'cart', { legal: 'Read our <a>terms</a> now' });
+        store.addMessages('en', 'cart', { legal: 'Read our <a>terms</a> now' });
 
         const container = document.createElement('div');
         document.body.appendChild(container);
@@ -75,34 +74,18 @@ describe('<T> component', () => {
         expect(container.textContent).toContain('Read our');
         expect(container.textContent).toContain('now');
     });
-});
 
-describe('use:t directive', () => {
-    it('sets textContent from a key and updates on locale change', async () => {
-        const Root = component(() => () => (
-            <div>
-                <span id="greet" use:t="hi" />
-                <span id="cnt" use:t={['items', { count: 2 }]} />
-            </div>
-        ));
-
+    it('resolves a hierarchical namespace via the ns prop', async () => {
+        const Root = component(() => () => <T k="title" ns="admin/users" />);
         const app = defineApp((<Root />) as never);
-        app.use(createI18n(opts)).use(i18nDirectives());
+        app.use(createI18n(opts));
         const store = app.runWithContext(() => useI18n());
-        store.addMessages('', 'en', 'cart', { hi: 'Hi', items: { one: '# item', other: '# items' } });
-        store.addMessages('', 'sv', 'cart', { hi: 'Hej', items: { one: '# vara', other: '# varor' } });
+        store.addMessages('en', 'admin/users', { title: 'Users' });
 
         const container = document.createElement('div');
         document.body.appendChild(container);
         app.mount(container);
         await tick();
-
-        expect(container.querySelector('#greet')?.textContent).toBe('Hi');
-        expect(container.querySelector('#cnt')?.textContent).toBe('2 items');
-
-        await store.setLocale('sv');
-        await tick();
-        expect(container.querySelector('#greet')?.textContent).toBe('Hej');
-        expect(container.querySelector('#cnt')?.textContent).toBe('2 varor');
+        expect(container.textContent).toContain('Users');
     });
 });

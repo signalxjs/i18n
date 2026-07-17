@@ -5,8 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServerT } from '../src/server.js';
 
-let root2: string; // 2-level: locale/ns.json
-let root3: string; // 3-level: target/locale/ns.json
+let root2: string; // locale/ns.json (+ nested ns)
 
 function write(dir: string, rel: string, json: unknown): void {
     const parts = rel.split('/');
@@ -20,15 +19,11 @@ beforeAll(() => {
     root2 = mkdtempSync(join(tmpdir(), 'sigx-i18n-srv2-'));
     write(root2, 'en/mail.json', { welcome: 'Welcome {name}', items: { one: '# item', other: '# items' } });
     write(root2, 'sv/mail.json', { welcome: 'Välkommen {name}' }); // no `items` → fallback
-
-    root3 = mkdtempSync(join(tmpdir(), 'sigx-i18n-srv3-'));
-    write(root3, 'common/en/nav.json', { home: 'Home' });
-    write(root3, 'admin/en/nav.json', { dash: 'Dashboard' });
+    write(root2, 'en/admin/users.json', { title: 'Users' }); // nested namespace
 });
 
 afterAll(() => {
     rmSync(root2, { recursive: true, force: true });
-    rmSync(root3, { recursive: true, force: true });
 });
 
 describe('createServerT — 2-level layout', () => {
@@ -48,18 +43,10 @@ describe('createServerT — 2-level layout', () => {
     });
 });
 
-describe('createServerT — 3-level layout with targets', () => {
-    it('resolves through the extends base and prefers the active target', async () => {
-        const i18n = await createServerT({
-            localesDir: root3,
-            fallbackLocale: 'en',
-            defaultNamespace: 'nav',
-            targets: { admin: { extends: 'common' }, common: {} }
-        });
-
-        expect(i18n.t('home', {}, { locale: 'en', target: 'admin' })).toBe('Home'); // via extends
-        expect(i18n.t('dash', {}, { locale: 'en', target: 'admin' })).toBe('Dashboard');
-        expect(i18n.t('dash', {}, { locale: 'en', target: 'common' })).toBe('dash'); // base can't see admin
+describe('createServerT — hierarchical namespaces', () => {
+    it('resolves a key under a nested namespace path', async () => {
+        const i18n = await createServerT({ localesDir: root2, fallbackLocale: 'en' });
+        expect(i18n.t('title', {}, { locale: 'en', namespace: 'admin/users' })).toBe('Users');
     });
 });
 

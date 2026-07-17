@@ -68,22 +68,6 @@ export function localeChain(
     return chain;
 }
 
-/** Build the target chain: the active target then its `extends` ancestors. Cycle-safe. */
-export function targetChain(
-    target: string,
-    targets?: Record<string, { extends?: string }>
-): string[] {
-    const chain: string[] = [];
-    const seen = new Set<string>();
-    let cur: string | undefined = target;
-    while (cur !== undefined && !seen.has(cur)) {
-        seen.add(cur);
-        chain.push(cur);
-        cur = targets?.[cur]?.extends;
-    }
-    return chain;
-}
-
 /**
  * Best-fit negotiation: pick the supported locale closest to `requested`,
  * matching along the BCP-47 chain and then by primary subtag, before falling
@@ -106,9 +90,10 @@ export function matchLocale(
 }
 
 /**
- * Translate a key within a `(target, locale, namespace)` scope against a message
- * tree, applying target + locale fallback. Returns the formatted string, or the
- * configured missing-key result (default: the key itself, with a dev warning).
+ * Translate a key within a `(locale, namespace)` scope against a message tree,
+ * applying master-locale fallback along the locale chain. Returns the formatted
+ * string, or the configured missing-key result (default: the key itself, with a
+ * dev warning).
  */
 export function translate(
     tree: MessageTree,
@@ -117,34 +102,23 @@ export function translate(
     scope: ResolveScope,
     config: TranslateConfig
 ): string {
-    const targets = targetChain(scope.target, config.targets);
     const locales = localeChain(scope.locale, config.fallbackLocale, config.localeFallbacks);
 
-    for (const t of targets) {
-        const byLocale = tree[t];
-        if (!byLocale) continue;
-        for (const l of locales) {
-            const cat = byLocale[l]?.[scope.namespace];
-            if (!cat) continue;
-            const msg = getMessage(cat, key);
-            if (msg !== undefined) {
-                return config.formatter.format(msg, params, { locale: l, key });
-            }
+    for (const l of locales) {
+        const cat = tree[l]?.[scope.namespace];
+        if (!cat) continue;
+        const msg = getMessage(cat, key);
+        if (msg !== undefined) {
+            return config.formatter.format(msg, params, { locale: l, key });
         }
     }
 
     if (config.onMissing) {
-        return config.onMissing({
-            key,
-            namespace: scope.namespace,
-            locale: scope.locale,
-            target: scope.target
-        });
+        return config.onMissing({ key, namespace: scope.namespace, locale: scope.locale });
     }
     if (__DEV__) {
         console.warn(
-            `[@sigx/i18n] missing translation "${key}" ` +
-            `(ns=${scope.namespace}, locale=${scope.locale}, target=${scope.target || 'default'}).`
+            `[@sigx/i18n] missing translation "${key}" (ns=${scope.namespace}, locale=${scope.locale}).`
         );
     }
     return key;

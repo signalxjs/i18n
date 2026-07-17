@@ -19,25 +19,21 @@ import { useI18n, type I18nStore } from './store.js';
 
 // ── Typed surface (populated by the @sigx/i18n/vite generated Schema) ─────────
 // When the Vite plugin has generated types, `Schema` carries the real
-// targets/locales/namespaces/keys; otherwise every alias below degrades to a
-// permissive `string`, so the runtime works with or without codegen.
+// locales/namespaces/keys; otherwise every alias below degrades to a permissive
+// `string`, so the runtime works with or without codegen.
 
 type SchemaMessages = Schema extends { messages: infer M } ? M : unknown;
 
 /** Known locales union (or `string` without codegen). */
 export type KnownLocale = Schema extends { locales: infer L } ? L & string : string;
-/** Known targets union (or `string` without codegen). */
-export type KnownTarget = Schema extends { targets: infer T } ? T & string : string;
 /** Known namespaces union (or `string` without codegen). */
 export type KnownNamespace = Schema extends { namespaces: infer N } ? N & string : string;
 
-/** Dotted keys available in a namespace (union across targets), or `string`. */
+/** Dotted keys available in a namespace, or `string` without codegen. */
 export type KeysForNamespace<NS extends string> = SchemaMessages extends Record<string, unknown>
-    ? {
-          [T in keyof SchemaMessages]: NS extends keyof SchemaMessages[T]
-              ? Extract<keyof SchemaMessages[T][NS], string>
-              : never;
-      }[keyof SchemaMessages]
+    ? NS extends keyof SchemaMessages
+        ? Extract<keyof SchemaMessages[NS], string>
+        : never
     : string;
 
 /** A nested accessor node: callable for params, indexable for deeper keys. */
@@ -54,16 +50,10 @@ export interface Translator {
 
 // ── Nested typed accessor (derived from the generated Schema) ─────────────────
 
-type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void
-    ? I
-    : never;
-
-/** Flat dotted-key → params for a namespace, merged across every target that has it. */
-type NamespaceKeyParams<NS extends string> = UnionToIntersection<
-    {
-        [T in keyof SchemaMessages]: NS extends keyof SchemaMessages[T] ? SchemaMessages[T][NS] : never;
-    }[keyof SchemaMessages]
->;
+/** Flat dotted-key → params record for a namespace. */
+type NamespaceKeyParams<NS extends string> = NS extends keyof SchemaMessages
+    ? SchemaMessages[NS]
+    : Record<string, never>;
 
 /** A leaf: params required when the key has any, a plain no-arg call when it has none. */
 type LeafFn<P> = keyof P extends never ? () => string : (params: P) => string;
@@ -97,16 +87,12 @@ export type TypedTranslator<NS extends string> = SchemaMessages extends Record<s
 type TranslateFn = Pick<I18nStore, 'translateKey'>;
 
 /**
- * Build a translator bound to a store + namespace (+ optional target override).
+ * Build a translator bound to a store + namespace.
  * Exposed for advanced use / SSR; components normally use `useTranslation`.
  */
-export function createTranslator(
-    store: TranslateFn,
-    namespace: string,
-    targetOverride?: string
-): Translator {
+export function createTranslator(store: TranslateFn, namespace: string): Translator {
     const resolve = (path: string[], params?: Params): string =>
-        store.translateKey(namespace, path.join('.'), params, targetOverride);
+        store.translateKey(namespace, path.join('.'), params);
 
     const makeNode = (path: string[]): TranslatorNode => {
         // Target must be a function so the proxy's `apply` trap fires.
@@ -151,49 +137,37 @@ export function createTranslator(
  * to the real catalog; without it, both accept any string.
  */
 export function useTranslation<NS extends KnownNamespace = KnownNamespace>(
-    namespace?: NS,
-    options?: { target?: KnownTarget }
+    namespace?: NS
 ): TypedTranslator<NS> {
     const store = useI18n();
     const ns = namespace ?? store.defaultNamespace;
-    void store.ensureNamespace(ns, options?.target); // load the requested target's catalogs
-    return createTranslator(store, ns, options?.target) as unknown as TypedTranslator<NS>;
+    void store.ensureNamespace(ns); // loads the namespace on first use
+    return createTranslator(store, ns) as unknown as TypedTranslator<NS>;
 }
 
-/** Reactive locale/target controls, resolved from the i18n store. */
+/** Reactive locale controls, resolved from the i18n store. */
 export interface LocaleControls {
     /** The active locale (reactive). */
     readonly locale: KnownLocale;
-    /** The active target/scope (reactive). */
-    readonly target: KnownTarget;
-    /** True while a locale/target/namespace load is in flight (reactive). */
+    /** True while a locale/namespace load is in flight (reactive). */
     readonly loading: boolean;
     /** Switch locale (typed to the known locales with codegen). */
     setLocale: (locale: KnownLocale) => Promise<void>;
-    /** Switch target/scope (typed to the known targets with codegen). */
-    setTarget: (target: KnownTarget) => Promise<void>;
-    /** Additively load a target's catalogs. */
-    loadTarget: (target: KnownTarget) => Promise<void>;
     /** Resolves when the initial catalogs + device hydration have settled. */
     whenReady: Promise<void>;
 }
 
-/** Locale/target controls for switching UI. */
+/** Locale controls for switching UI. */
 export function useLocale(): LocaleControls {
     const store = useI18n();
     return {
         get locale() {
             return store.locale as KnownLocale;
         },
-        get target() {
-            return store.target as KnownTarget;
-        },
         get loading() {
             return store.loading;
         },
         setLocale: store.setLocale,
-        setTarget: store.setTarget,
-        loadTarget: store.loadTarget,
         whenReady: store.whenReady
     };
 }

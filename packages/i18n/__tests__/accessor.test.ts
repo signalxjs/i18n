@@ -32,7 +32,7 @@ beforeEach(() => {
 describe('accessor — three forms are equivalent', () => {
     it('t(key,params) === t.a.b(params) === String(t.a.b) === `${t.a.b}`', () => {
         const { store, t } = scenario();
-        store.addMessages('', 'en', 'cart', {
+        store.addMessages('en', 'cart', {
             summary: { title: 'Your cart' },
             items: { one: '# item', other: '# items' }
         });
@@ -48,8 +48,8 @@ describe('accessor — three forms are equivalent', () => {
 
     it('falls back to the master locale through the accessor', async () => {
         const { store, t, locale } = scenario();
-        store.addMessages('', 'en', 'cart', { only_en: 'English' });
-        store.addMessages('', 'sv', 'cart', {});
+        store.addMessages('en', 'cart', { only_en: 'English' });
+        store.addMessages('sv', 'cart', {});
         await locale.setLocale('sv');
         expect(t.only_en()).toBe('English');
     });
@@ -58,8 +58,8 @@ describe('accessor — three forms are equivalent', () => {
 describe('accessor — reactivity', () => {
     it('the callable form re-runs a computed on locale change', async () => {
         const { store, t, locale } = scenario();
-        store.addMessages('', 'en', 'cart', { hi: 'Hi' });
-        store.addMessages('', 'sv', 'cart', { hi: 'Hej' });
+        store.addMessages('en', 'cart', { hi: 'Hi' });
+        store.addMessages('sv', 'cart', { hi: 'Hej' });
 
         const c = computed(() => t.hi());
         expect(c.value).toBe('Hi');
@@ -69,8 +69,8 @@ describe('accessor — reactivity', () => {
 
     it('the bare-coercion form re-runs an effect on locale change', async () => {
         const { store, t, locale } = scenario();
-        store.addMessages('', 'en', 'cart', { hi: 'Hi' });
-        store.addMessages('', 'sv', 'cart', { hi: 'Hej' });
+        store.addMessages('en', 'cart', { hi: 'Hi' });
+        store.addMessages('sv', 'cart', { hi: 'Hej' });
 
         const seen: string[] = [];
         const stop = effect(() => seen.push(`${t.hi}`)); // template-literal coercion
@@ -99,34 +99,31 @@ describe('accessor is renderer-safe (regression: mistaken for a vnode)', () => {
 });
 
 describe('useLocale controls', () => {
-    it('exposes a reactive locale + setLocale/target', async () => {
+    it('exposes a reactive locale + setLocale', async () => {
         const { locale } = scenario();
         expect(locale.locale).toBe('en');
-        expect(locale.target).toBe('');
         await locale.setLocale('sv');
         expect(locale.locale).toBe('sv');
     });
 });
 
-describe('target override on useTranslation', () => {
-    it('reads from an explicit target scope (with extends base)', () => {
+describe('useTranslation on a hierarchical namespace', () => {
+    it('resolves keys under a nested namespace path', () => {
         const app = defineApp(jsx('div', {}));
-        app.use(createI18n(opts({ targets: { admin: { extends: 'common' }, common: {} } })));
+        app.use(createI18n(opts()));
         const { store, t } = app.runWithContext(() => {
             const store = useI18n();
-            return { store, t: useTranslation('nav', { target: 'admin' }) };
+            return { store, t: useTranslation('admin/users') };
         });
-        store.addMessages('common', 'en', 'nav', { home: 'Home' });
-        store.addMessages('admin', 'en', 'nav', { dash: 'Dashboard' });
-        expect(t.home()).toBe('Home'); // inherited via extends
-        expect(t.dash()).toBe('Dashboard');
+        store.addMessages('en', 'admin/users', { title: 'Users' });
+        expect(t.title()).toBe('Users');
     });
 });
 
 describe('lazy namespace load via useTranslation', () => {
     it('triggers a loader fetch for the requested namespace', async () => {
         const seen: string[] = [];
-        const load = async (_t: string, _l: string, ns: string) => {
+        const load = async (_l: string, ns: string) => {
             seen.push(ns);
             return { greeting: 'Hello' };
         };

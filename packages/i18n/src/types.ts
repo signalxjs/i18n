@@ -22,7 +22,7 @@ export type PluralForms = { other: string } & Partial<Record<PluralCategory, str
 export type MessageValue = string | PluralForms;
 
 /**
- * A loaded catalog for one `(target, locale, namespace)`. Values may be nested
+ * A loaded catalog for one `(locale, namespace)`. Values may be nested
  * (`{ cart: { title } }` → key `"cart.title"`) or flat dotted (`{ "cart.title" }`).
  * A `PluralForms` object is a leaf, not a nested group (detected heuristically:
  * an object whose keys are all plural categories).
@@ -34,8 +34,8 @@ export interface Catalog {
 /** Interpolation params passed to `t(key, params)`. `count` drives plural selection. */
 export type Params = Record<string, unknown> & { count?: number };
 
-/** `messages[target][locale][namespace] -> Catalog`. */
-export type MessageTree = Record<string, Record<string, Record<string, Catalog>>>;
+/** `messages[locale][namespace] -> Catalog`. Namespaces may be hierarchical (`admin/users`). */
+export type MessageTree = Record<string, Record<string, Catalog>>;
 
 /** Context handed to a formatter for one resolution. */
 export interface FormatContext {
@@ -60,19 +60,10 @@ export interface MissingInfo {
     namespace: string;
     /** The originally requested locale (not the fallback chain). */
     locale: string;
-    /** The originally requested target. */
-    target: string;
-}
-
-/** Target (scope) definition — names are entirely consumer-defined. */
-export interface TargetDef {
-    /** Inherit from another target when a key is absent here. */
-    extends?: string;
 }
 
 /** The resolution scope for a single `translate` call. */
 export interface ResolveScope {
-    target: string;
     locale: string;
     namespace: string;
 }
@@ -86,18 +77,16 @@ export interface TranslateConfig {
     fallbackLocale: string;
     /** Optional explicit locale fallbacks (e.g. `{ nb: 'no' }`), applied on top of BCP-47 truncation. */
     localeFallbacks?: Record<string, string>;
-    /** Target graph; when omitted, a single default target is used. */
-    targets?: Record<string, TargetDef>;
     /** Message formatter. Defaults to `lightweightFormatter`. */
     formatter: Formatter;
-    /** Called when no locale/target in the chains has the key. Default: dev-warn + return the key. */
+    /** Called when no locale in the chain has the key. Default: dev-warn + return the key. */
     onMissing?: (info: MissingInfo) => string;
 }
 
 /**
  * Augmentation seam for the Vite plugin's generated types. The plugin emits
  * `declare module '@sigx/i18n' { interface Schema { … } }` describing the real
- * targets/locales/namespaces/keys/params; the accessor and `useTranslation`
+ * locales/namespaces/keys/params; the accessor and `useTranslation`
  * read from `Schema` when present and fall back to permissive strings otherwise.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
