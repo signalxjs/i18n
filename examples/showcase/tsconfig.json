@@ -1,11 +1,16 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "jsxImportSource": "sigx",
+    "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": []
+    "strict": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "sigx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "types": ["vite/client"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

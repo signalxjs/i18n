@@ -52,15 +52,47 @@ export interface Translator {
     [segment: string]: TranslatorNode;
 }
 
+// ── Nested typed accessor (derived from the generated Schema) ─────────────────
+
+type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void
+    ? I
+    : never;
+
+/** Flat dotted-key → params for a namespace, merged across every target that has it. */
+type NamespaceKeyParams<NS extends string> = UnionToIntersection<
+    {
+        [T in keyof SchemaMessages]: NS extends keyof SchemaMessages[T] ? SchemaMessages[T][NS] : never;
+    }[keyof SchemaMessages]
+>;
+
+/** A leaf: params required when the key has any, a plain no-arg call when it has none. */
+type LeafFn<P> = keyof P extends never ? () => string : (params: P) => string;
+
+/** First path segment of a dotted key. */
+type Head<K extends string> = K extends `${infer H}.${string}` ? H : K;
+/** Flat record of the keys nested under `H.` with the `H.` prefix stripped. */
+type ChildKeys<F, H extends string> = {
+    [K in keyof F as K extends `${H}.${infer R}` ? R : never]: F[K];
+};
+
 /**
- * A translator whose string-key form is typed to the namespace's real keys
- * (unknown keys are compile errors). The nested accessor (`t.a.b`) is
- * runtime-equivalent and stays structurally permissive.
+ * Turn a flat dotted-key → params record into a nested accessor type: each
+ * segment is a typed callable leaf and/or a nested group.
  */
-export interface TypedTranslator<NS extends string> {
-    (key: KeysForNamespace<NS>, params?: Params): string;
-    [segment: string]: TranslatorNode;
-}
+type Nested<F> = {
+    [H in Head<Extract<keyof F, string>>]: (H extends keyof F ? LeafFn<F[H]> : unknown) &
+        ([Extract<keyof F, `${H}.${string}`>] extends [never] ? unknown : Nested<ChildKeys<F, H>>);
+};
+
+/**
+ * A translator typed from the generated Schema: the nested accessor
+ * (`t.cart.revenue({ amount })`) is fully typed per key, and the string-key form
+ * (`t('cart.revenue', …)`) validates the key. Without codegen this degrades to
+ * the permissive `Translator`.
+ */
+export type TypedTranslator<NS extends string> = SchemaMessages extends Record<string, unknown>
+    ? Nested<NamespaceKeyParams<NS>> & { (key: KeysForNamespace<NS>, params?: Params): string }
+    : Translator;
 
 type TranslateFn = Pick<I18nStore, 'translateKey'>;
 

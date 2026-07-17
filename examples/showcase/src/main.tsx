@@ -1,5 +1,5 @@
 import { defineApp } from 'sigx';
-import { createI18n } from '@sigx/i18n';
+import { createI18n, type LocaleLoader } from '@sigx/i18n';
 import { i18nDirectives } from '@sigx/i18n/dom';
 import { App } from './App';
 
@@ -9,9 +9,9 @@ import { App } from './App';
 // probed via the `extends` chain — resolves to an empty catalog instead of
 // throwing Vite's "Unknown variable dynamic import".
 const catalogs = import.meta.glob('./locales/**/*.json');
-const loadCatalog = (target: string, locale: string, ns: string) => {
+const loadCatalog: LocaleLoader = (target, locale, ns) => {
     const loader = catalogs[`./locales/${target}/${locale}/${ns}.json`];
-    return loader ? loader() : Promise.resolve({});
+    return (loader ? loader() : Promise.resolve({})) as ReturnType<LocaleLoader>;
 };
 
 defineApp(<App />)

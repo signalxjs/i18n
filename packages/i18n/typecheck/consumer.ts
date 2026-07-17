@@ -13,13 +13,25 @@ import { useTranslation, useLocale } from '@sigx/i18n';
 //   title (no params), hi ({ name }), items ({ count }); locales en|sv.
 const t = useTranslation('cart');
 
-// Valid keys + params.
+// String-key form: valid keys + params.
 t('title');
 t('hi', { name: 'Sam' });
 t('items', { count: 3 });
 
 // @ts-expect-error unknown key is a compile error
 t('does.not.exist');
+
+// Nested accessor form: fully typed per key.
+t.title(); // no-param leaf
+t.hi({ name: 'Sam' }); // typed param
+t.items({ count: 3 }); // typed param (plural)
+
+// @ts-expect-error unknown nested key is a compile error
+t.nope;
+// @ts-expect-error `title` takes no params
+t.title({ x: 1 });
+// @ts-expect-error `hi` requires its `name` param
+t.hi();
 
 // @ts-expect-error unknown namespace is a compile error
 useTranslation('no-such-namespace');
