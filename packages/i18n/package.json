@@ -81,7 +81,7 @@
         "@sigx/vite": "^0.12.0",
         "@types/node": "^25.9.1",
         "sigx": "^0.12.0",
-        "typescript": "^6.0.3",
+        "typescript": "^7.0.2",
         "vite": "^8.0.3"
     },
     "publishConfig": {
