@@ -1,88 +1,92 @@
-// Server-side localization with @sigx/i18n/server — no client JavaScript.
-// Renders localized HTML pages and an email preview, choosing the locale from
-// ?lang, a `locale` cookie, or the Accept-Language header (server has them all).
+// SSR server for the @sigx/i18n showcase — plain Node, no transpiler.
+//   • dev  : Vite middleware + one SSR handler (real SignalX component render)
+//   • prod : static assets + one SSR handler over the built entry
+//   • /mail: a server-ONLY render via @sigx/i18n/server (no app, no DOM) —
+//            catalogs that never ship to the browser (mail templates).
+// Run production with `--conditions production` for the NODE_ENV-stripped dist.
 import express from 'express';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createServerT } from '@sigx/i18n/server';
-import { parseAcceptLanguage, findSupported } from '@sigx/i18n';
+import { readFile } from 'node:fs/promises';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const isProd = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT) || 3000;
-const supported = ['en', 'sv'];
+const localesDir = resolve(__dirname, 'src/locales');
 
-// One translator, catalogs read from disk once (mail namespace is server-only).
-const t = await createServerT({
-    localesDir: resolve(__dirname, 'src/locales'),
-    fallbackLocale: 'en'
-});
+// Bots get the blocking document (all content inline); browsers stream + hydrate.
+// Either way the HTML is fully translated: the entry preloads this page's
+// catalogs before rendering, so the render is synchronous — there are no async
+// boundaries, and the streamed shell already carries every translation.
+const isBot = (ua) => /bot|crawl|spider|slurp|gptbot|claudebot|perplexity|headless/i.test(ua ?? '');
 
-/** url ?lang → cookie → Accept-Language → master. */
-function pickLocale(req) {
-    const q = req.query.lang;
-    if (typeof q === 'string') {
-        const m = findSupported(q, supported);
-        if (m) return m;
-    }
-    const cookie = req.headers.cookie?.match(/(?:^|;\s*)locale=([^;]+)/)?.[1];
-    if (cookie) {
-        const m = findSupported(decodeURIComponent(cookie), supported);
-        if (m) return m;
-    }
-    for (const cand of parseAcceptLanguage(req.headers['accept-language'] ?? '')) {
-        const m = findSupported(cand, supported);
-        if (m) return m;
-    }
-    return 'en';
+// A server-ONLY route: render a localized email with the DI-free translator.
+// Its `mail` namespace is never in the client loader's glob — server-only.
+async function mailRoute(req, res) {
+    const { createServerT } = await import('@sigx/i18n/server');
+    const t = await createServerT({ localesDir, fallbackLocale: 'en', defaultNamespace: 'mail' });
+    const locale = typeof req.query.lang === 'string' ? req.query.lang : 'en';
+    const m = t.forLocale(locale, { namespace: 'mail' });
+    const name = 'Ada';
+    res.type('html').send(
+        `<!doctype html><meta charset="utf-8"><title>${m('subject')}</title>` +
+            `<div style="font:15px/1.6 system-ui;max-width:520px;margin:3rem auto;padding:1.5rem;border:1px solid #8883;border-radius:12px">` +
+            `<nav style="margin-bottom:1rem">lang: <a href="/mail?lang=en">EN</a> · <a href="/mail?lang=sv">SV</a> · <a href="/">← app</a></nav>` +
+            `<p style="opacity:.6">Subject: ${m('subject')}</p>` +
+            `<h2 style="margin-top:0">${m('welcome', { name })}</h2>` +
+            `<p>${m('body', { credits: 250 })}</p>` +
+            // `ps` exists only in en/mail.json → falls back to the master locale in sv
+            `<p style="opacity:.75">${m('ps')}</p>` +
+            `<p style="opacity:.6">${m('signoff')}</p>` +
+            `<hr style="border:none;border-top:1px solid #8882;margin:1.5rem 0">` +
+            `<p style="opacity:.5;font-size:.85em">Rendered on the server with <code>@sigx/i18n/server</code> — ` +
+            `no app, no DOM, no client bundle.</p></div>`
+    );
 }
 
-const layout = (locale, inner) =>
-    `<!doctype html><html lang="${locale}"><head><meta charset="utf-8">` +
-    `<meta name="viewport" content="width=device-width, initial-scale=1">` +
-    `<title>@sigx/i18n · server</title>` +
-    `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:640px;margin:3rem auto;padding:0 1rem}` +
-    `nav a{margin-right:.75rem}code{background:#8881;padding:.1rem .3rem;border-radius:4px}` +
-    `.card{border:1px solid #8883;border-radius:12px;padding:1.25rem 1.5rem;margin-top:1rem}</style>` +
-    `</head><body>${inner}</body></html>`;
+async function createServer() {
+    const app = express();
+    app.get('/mail', mailRoute);
 
-const app = express();
+    if (!isProd) {
+        // Dev: Vite middleware + ONE handler. `createDevRequestHandler` loads the
+        // renderer through the same SSR module runner as the app (one module
+        // graph → one runtime-core → DI tokens line up), transforms the template,
+        // and owns the bot/stream/status dispatch.
+        const { createServer: createViteServer } = await import('vite');
+        const { createDevRequestHandler } = await import('@sigx/vite/ssr');
+        const vite = await createViteServer({
+            root: __dirname,
+            server: { middlewareMode: true },
+            appType: 'custom'
+        });
+        app.use(vite.middlewares);
+        app.use(await createDevRequestHandler(vite, { entry: '/src/entry-server.tsx', isBot }));
+    } else {
+        // Prod: static assets + ONE handler over the built entry.
+        const { createRequestHandler } = await import('@sigx/server-renderer/node');
+        const clientDir = resolve(__dirname, 'dist/client');
+        const template = await readFile(resolve(clientDir, 'index.html'), 'utf-8');
+        const { createApp } = await import(
+            pathToFileURL(resolve(__dirname, 'dist/server/entry-server.js')).href
+        );
+        app.use(express.static(clientDir, { index: false }));
+        app.use(
+            createRequestHandler({
+                template,
+                // Prod passes `req` too → header detection (Accept-Language/Cookie).
+                app: (url, req) => createApp(url, req),
+                isBot
+            })
+        );
+    }
 
-app.get('/', (req, res) => {
-    const locale = pickLocale(req);
-    const w = t.forLocale(locale, { namespace: 'web' });
-    res.type('html').send(
-        layout(
-            locale,
-            `<nav>lang: <a href="/?lang=en">EN</a><a href="/?lang=sv">SV</a></nav>` +
-                `<h1>${w('title')}</h1>` +
-                `<p>${w('intro', { locale })}</p>` +
-                `<p><strong>${w('users', { count: 1337 })}</strong></p>` +
-                `<p><a href="/mail?lang=${locale}">${w('cta')} → view a localized email</a></p>`
-        )
-    );
-});
+    app.listen(port, () => {
+        console.log(
+            `[i18n-ssr] ${isProd ? 'production' : 'dev'} server on http://localhost:${port}` +
+                `  (try /?lang=sv and /mail?lang=sv)`
+        );
+    });
+}
 
-// A SERVER-ONLY namespace (mail) — never shipped to a client bundle.
-app.get('/mail', (req, res) => {
-    const locale = pickLocale(req);
-    const name = typeof req.query.to === 'string' ? req.query.to : 'Andreas';
-    const m = t.forLocale(locale, { namespace: 'mail' });
-    res.type('html').send(
-        layout(
-            locale,
-            `<nav>lang: <a href="/mail?lang=en">EN</a><a href="/mail?lang=sv">SV</a> · <a href="/?lang=${locale}">home</a></nav>` +
-                `<div class="card">` +
-                `<p style="opacity:.6">Subject: ${m('subject')}</p>` +
-                `<h2>${m('welcome', { name })}</h2>` +
-                `<p>${m('body', { credits: 4200 })}</p>` +
-                // `ps` exists only in en/mail.json → falls back to the master locale in sv
-                `<p style="opacity:.75">${m('ps')}</p>` +
-                `<p>${m('signoff')}</p>` +
-                `</div>`
-        )
-    );
-});
-
-app.listen(port, () => {
-    console.log(`[i18n-ssr] http://localhost:${port}  (try /?lang=sv and /mail?lang=sv)`);
-});
+createServer();

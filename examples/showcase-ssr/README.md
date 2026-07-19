@@ -1,38 +1,64 @@
-# @sigx/i18n — server-side showcase
+# @sigx/i18n — SSR showcase
 
-Server-side localization with **`@sigx/i18n/server`** — localized HTML pages and
-an email-template preview, with **no client JavaScript**. Shows the DI-free
-server translator, locale negotiation, master fallback, and plurals/number
-formatting on the server (the "mail templates / jobs" use case).
+**Real SignalX server-side rendering with `@sigx/i18n`.** The same components
+render on the server (to HTML) and hydrate on the client — no string-building,
+no re-translate flash. Plus a server-only email route using the DI-free
+`@sigx/i18n/server` translator.
 
 ## Run
 
 ```sh
 pnpm install
-pnpm build                                        # build @sigx/i18n first
+pnpm --filter @sigx/i18n build          # examples use the built dist
 pnpm --filter @sigx/i18n-showcase-ssr-example dev
 ```
 
-Then:
+Then open <http://localhost:3000>.
+
+Production:
 
 ```sh
-curl 'http://localhost:3000/?lang=sv'             # Swedish landing page
-curl 'http://localhost:3000/mail?lang=sv&to=Åsa'  # Swedish email preview
-curl -H 'Accept-Language: sv' http://localhost:3000/   # header-based detection
+pnpm --filter @sigx/i18n-showcase-ssr-example build
+pnpm --filter @sigx/i18n-showcase-ssr-example start
 ```
-
-Or open <http://localhost:3000> and toggle EN/SV.
 
 ## What it shows
 
-- **`createServerT()`** — a non-reactive translator with zero sigx/app
-  dependency, catalogs read from disk once.
-- **Server-only namespace** — `mail` is never shipped to a client bundle.
-- **Locale negotiation** — `?lang` → `locale` cookie → `Accept-Language` → master.
-- **Master fallback** — the email's `ps` line exists only in `en/mail.json`, so
-  the Swedish email falls back to English for that one line.
-- **Formatting** — plurals (`users`) and numbers (`credits`) on the server.
+- **Real component SSR** — `src/App.tsx` is an ordinary SignalX component tree
+  (`useTranslation`, `useLocale`, `<T>`). `src/entry-server.tsx` renders it per
+  request; `src/entry-client.tsx` hydrates the exact same tree.
+- **The server awaits catalogs.** Namespaces requested during render (`home`
+  eagerly, `app` on first use) register their load with the render, so the shell
+  only emits once translations are resolved — **view-source shows localized HTML**,
+  not placeholders.
+- **Synchronous render, no boundaries.** The server preloads this request's
+  catalogs (`preloadCatalogs`) and hands them to the store as `initialMessages`,
+  so the render resolves every string from memory — the server VNode tree matches
+  the client's, and hydration wires up events with no mismatch.
+- **State transfer + no refetch.** `renderDocument`'s state plugin serializes the
+  loaded catalogs + locale into `window.__SIGX_ASYNC__['store:i18n']`. On the
+  client the store seeds from it *and marks those catalogs loaded*, so hydration
+  matches byte-for-byte and nothing is re-fetched (no flash).
+- **Locale detection, server-side.** `?lang=sv` works in dev and prod; production
+  also reads `Accept-Language` / `Cookie` (the prod handler passes `req`).
+- **Client-side switching** — the EN/SV buttons call `setLocale` and switch
+  reactively after hydration. Both locales are seeded from SSR, so the switch is
+  instant (no fetch). The `?lang=` links are the SSR path (a full navigation the
+  server renders in that locale). A larger app would preload only the active
+  locale and lazy-load the rest on switch, as the SPA showcase does.
+- **Master fallback** — the sentence from `home.fallbackNote` exists only in
+  English; Swedish falls back to it.
+- **Plurals / number / date** via the lightweight formatter (`app` namespace).
+- **A server-only namespace** — `/mail` (and `/mail?lang=sv`) renders a localized
+  email with `@sigx/i18n/server`. Its `mail` catalog is excluded from the client
+  loader's glob, so it never ships to the browser.
 
-> The reactive client story (SSR state transfer via `ssrState`, hydration without
-> flash) is covered by the SPA example and the package's unit tests; this example
-> focuses on what is uniquely server-side.
+## Verify the SSR is real
+
+```sh
+curl -s 'http://localhost:3000/?lang=sv' | grep -i 'Serverrenderad\|__SIGX_ASYNC__'
+```
+
+You should see the Swedish heading **in the initial HTML** and the
+`window.__SIGX_ASYNC__ = { "store:i18n": … }` seed — proof the translation ran on
+the server, not the client.

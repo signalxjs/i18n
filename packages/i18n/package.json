@@ -56,11 +56,11 @@
         "url": "https://github.com/signalxjs/i18n/issues"
     },
     "peerDependencies": {
-        "@sigx/reactivity": ">=0.10.0 <0.11.0",
-        "@sigx/runtime-core": ">=0.10.0 <0.11.0",
-        "@sigx/store": ">=0.8.0 <0.9.0",
-        "@sigx/vite": ">=0.10.0 <0.11.0",
-        "sigx": ">=0.10.0 <0.11.0",
+        "@sigx/reactivity": ">=0.12.0 <0.13.0",
+        "@sigx/runtime-core": ">=0.12.0 <0.13.0",
+        "@sigx/store": ">=0.9.0 <0.10.0",
+        "@sigx/vite": ">=0.12.0 <0.13.0",
+        "sigx": ">=0.12.0 <0.13.0",
         "vite": "^8.0.0"
     },
     "peerDependenciesMeta": {
@@ -75,12 +75,12 @@
         }
     },
     "devDependencies": {
-        "@sigx/reactivity": "^0.10.0",
-        "@sigx/runtime-core": "^0.10.0",
-        "@sigx/store": "^0.8.0",
-        "@sigx/vite": "^0.10.0",
+        "@sigx/reactivity": "^0.12.0",
+        "@sigx/runtime-core": "^0.12.0",
+        "@sigx/store": "^0.9.0",
+        "@sigx/vite": "^0.12.0",
         "@types/node": "^25.9.1",
-        "sigx": "^0.10.0",
+        "sigx": "^0.12.0",
         "typescript": "^6.0.3",
         "vite": "^8.0.3"
     },

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@sigx/i18n — SSR showcase</title>
+    <style>
+      :root { color-scheme: light dark; --line: color-mix(in oklab, currentColor 15%, transparent); }
+      * { box-sizing: border-box; }
+      body { font: 15px/1.55 system-ui, sans-serif; margin: 0; }
+      header {
+        display: flex; align-items: center; gap: 1rem;
+        padding: 1rem 1.5rem; border-bottom: 1px solid var(--line);
+      }
+      header strong { font-size: 1.05rem; }
+      .switcher { margin-left: auto; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+      .switcher a { font-size: .82rem; opacity: .6; text-decoration: none; padding: .2rem .4rem; }
+      .switcher a:hover { opacity: 1; }
+      main { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; }
+      h1 { font-size: 1.6rem; margin: 0 0 .5rem; }
+      .lead { font-size: 1.05rem; opacity: .85; margin: 0 0 .75rem; }
+      .served { font-size: .85rem; opacity: .6; margin: 0 0 1.5rem; }
+      .muted { opacity: .6; }
+      .card { border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.25rem; margin-top: 1rem; }
+      .card h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; opacity: .55; margin: 0 0 .6rem; }
+      .card p { margin: .35rem 0; }
+      button {
+        font: inherit; padding: .35rem .8rem; border-radius: 8px;
+        border: 1px solid var(--line); background: transparent; cursor: pointer;
+      }
+      button[aria-pressed="true"] { background: currentColor; color: Canvas; }
+      .cta { display: inline-block; margin-top: .5rem; }
+    </style>
+  </head>
+  <body>
+    <div id="app"><!--ssr-outlet--></div>
+    <script type="module" src="/src/entry-client.tsx"></script>
+  </body>
+</html>

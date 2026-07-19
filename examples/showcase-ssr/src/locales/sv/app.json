@@ -1,0 +1,6 @@
+{
+  "heading": "Aktuell statistik",
+  "users": { "one": "{count} aktiv användare", "other": "{count} aktiva användare" },
+  "revenue": "Omsättning: {amount, number}",
+  "updated": "Uppdaterad {when, date}"
+}

@@ -1,9 +1,0 @@
-{
-  "title": "Localized on the server",
-  "intro": "This page was rendered in {locale} by @sigx/i18n/server — zero client JavaScript.",
-  "users": {
-    "one": "# person is building with sigx",
-    "other": "# people are building with sigx"
-  },
-  "cta": "Read the docs"
-}

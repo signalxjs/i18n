@@ -1,0 +1,6 @@
+{
+  "heading": "Live stats",
+  "users": { "one": "{count} active user", "other": "{count} active users" },
+  "revenue": "Revenue: {amount, number}",
+  "updated": "Updated {when, date}"
+}

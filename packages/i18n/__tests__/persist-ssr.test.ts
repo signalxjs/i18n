@@ -1,5 +1,5 @@
 /** Tests for @sigx/i18n detection + persistence + SSR transfer through the store. */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { defineApp, jsx } from '@sigx/runtime-core';
 import { useI18n, useI18nConfig, type I18nRuntimeConfig } from '../src/store.js';
 
@@ -82,6 +82,53 @@ describe('SSR state transfer', () => {
         await store2.whenReady;
         expect(store2.ssrHydrated).toBe(false);
         expect(store2.locale).toBe('en');
+    });
+});
+
+describe('SSR seed marks catalogs loaded (no client refetch)', () => {
+    it('does not re-fetch namespaces the server already sent', async () => {
+        (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
+            'store:i18n': {
+                locale: 'de',
+                messages: { en: { common: { hi: 'Hi' } }, de: { common: { hi: 'Hallo' } } }
+            }
+        };
+        const load = vi.fn(async () => ({}));
+        const store = setup(base({ supported: ['en', 'de'], namespaces: ['common'], load }));
+        await store.whenReady;
+        await flush();
+
+        expect(store.ssrHydrated).toBe(true);
+        expect(store.translateKey('common', 'hi')).toBe('Hallo');
+        expect(load).not.toHaveBeenCalled(); // seeded (locale + fallback) → no fetch
+    });
+});
+
+describe('initialMessages (SSR preload)', () => {
+    it('seeds catalogs synchronously and never calls the loader for them', async () => {
+        const load = vi.fn(async () => ({}));
+        const store = setup(
+            base({
+                supported: ['en', 'sv'],
+                namespaces: ['home'],
+                defaultNamespace: 'home',
+                load,
+                initialMessages: {
+                    en: { home: { hi: 'Hi' } },
+                    sv: { home: { hi: 'Hej' } }
+                }
+            })
+        );
+        // resolvable immediately — no await needed for the seeded catalogs
+        expect(store.translateKey('home', 'hi')).toBe('Hi');
+        await store.whenReady;
+        await flush();
+        expect(load).not.toHaveBeenCalled();
+
+        // a switch to another preloaded locale is instant, still no fetch
+        await store.setLocale('sv');
+        expect(store.translateKey('home', 'hi')).toBe('Hej');
+        expect(load).not.toHaveBeenCalled();
     });
 });
 

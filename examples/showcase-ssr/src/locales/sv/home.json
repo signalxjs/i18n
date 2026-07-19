@@ -1,0 +1,8 @@
+{
+  "title": "Serverrenderad lokalisering",
+  "subtitle": "Den här sidan översattes på servern med @sigx/i18n, skickades som HTML och hydrerades sedan på klienten utan att blinka.",
+  "greeting": "Välkommen",
+  "servedBy": "Upptäckt och renderad på \"{locale}\" på servern",
+  "langLabel": "Språk",
+  "cta": "Visa källkoden"
+}

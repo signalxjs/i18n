@@ -1,0 +1,9 @@
+{
+  "title": "Server-rendered localization",
+  "subtitle": "This page was translated on the server with @sigx/i18n, streamed as HTML, then hydrated on the client with no flash.",
+  "greeting": "Welcome",
+  "servedBy": "Detected and rendered in \"{locale}\" on the server",
+  "langLabel": "Language",
+  "cta": "View the source",
+  "fallbackNote": "This sentence only exists in English — every other locale falls back to it automatically."
+}

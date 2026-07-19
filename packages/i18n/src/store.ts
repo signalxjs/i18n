@@ -41,6 +41,13 @@ export interface I18nRuntimeConfig {
     defaultNamespace?: string;
     /** Catalog loader; when absent, catalogs must be supplied via `addMessages`. */
     load?: LocaleLoader;
+    /**
+     * Catalogs to seed synchronously at creation (marked loaded, so no refetch).
+     * The idiomatic SSR preload: load the request's catalogs, pass them here, and
+     * the render stays synchronous while `ssrState` still transfers them to the
+     * client. Shape: `messages[locale][namespace]`.
+     */
+    initialMessages?: MessageTree;
     /** Missing-key handler. */
     onMissing?: (info: MissingInfo) => string;
     /** Run locale detection at init (default true). */
@@ -89,6 +96,18 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         if (!tree[locale]) tree[locale] = {};
         tree[locale][ns] = catalog;
         loaded.add(loadKey(locale, ns));
+    }
+
+    // Seed SSR-preloaded catalogs synchronously so the render is synchronous
+    // (no async boundaries → server/client VNode trees match) and every seeded
+    // namespace is marked active + loaded (no client refetch).
+    if (config.initialMessages) {
+        for (const locale of Object.keys(config.initialMessages)) {
+            for (const ns of Object.keys(config.initialMessages[locale])) {
+                mergeCatalog(locale, ns, config.initialMessages[locale][ns]);
+                activeNamespaces.add(ns);
+            }
+        }
     }
 
     function loadOne(locale: string, ns: string): Promise<void> {
@@ -228,8 +247,22 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
             ? { ssrHydrated: false, persistHandle: undefined }
             : installPersistSSR(ctx, { state, patch }, config.persistence ?? {});
 
+    // Client hydration: the server already sent these catalogs via `ssrState`, so
+    // mark them loaded (mirroring mergeCatalog) — otherwise the initial reload
+    // below would re-fetch every server-sent namespace (flash + wasted request).
+    if (ssrHydrated) {
+        for (const locale of Object.keys(state.messages)) {
+            for (const ns of Object.keys(state.messages[locale])) {
+                loaded.add(loadKey(locale, ns));
+                activeNamespaces.add(ns);
+            }
+        }
+    }
+
     // Load configured namespaces now (first paint), and again after device
-    // hydration in case persist restored a different locale.
+    // hydration in case persist restored a different locale. Callers that need
+    // catalogs resolved before use (e.g. SSR, before rendering) await `whenReady`
+    // (and `ensureNamespace` for on-demand namespaces).
     void reloadActive(state.locale);
     const whenReady = Promise.resolve(persistHandle?.whenHydrated).then(() => reloadActive(state.locale));
 
