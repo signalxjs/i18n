@@ -63,8 +63,53 @@ axis.
 | Entry | Purpose |
 |---|---|
 | `@sigx/i18n` | store, `useTranslation` accessor, `<T>` component, formatter, detectors, plugin — the universal binding surface (DOM, lynx, terminal, SSR) |
-| `@sigx/i18n/server` | non-reactive `createServerT()` for mail templates & jobs |
-| `@sigx/i18n/vite` | typed-keys codegen + missing-translation build gate + HMR |
+| `@sigx/i18n/server` | non-reactive `createServerT()` / `createRequestT()` for mail templates, jobs & server functions — **universal** (no `node:` imports, runs on workerd/Deno/Bun) |
+| `@sigx/i18n/server/node` | `loadCatalogs(dir)` — the filesystem catalog reader, the one Node-only entry |
+| `@sigx/i18n/vite` | typed-keys codegen + missing-translation build gate + HMR + the virtual catalog modules |
+
+### Server-side translation, on any runtime
+
+`createServerT` takes catalogs **as data**, so the same call works from a Node
+mailer and from a bundled Cloudflare/Deno/Vercel worker:
+
+```ts
+// Node — read them off disk
+import { createServerT, loadCatalogs } from '@sigx/i18n/server/node';
+const t = createServerT({ catalogs: await loadCatalogs('src/locales'), fallbackLocale: 'en' });
+
+// Edge — the Vite plugin inlines them; no filesystem involved
+import catalogs from 'virtual:sigx-i18n/server-catalogs';
+import { createServerT } from '@sigx/i18n/server';
+const t = createServerT({ catalogs, fallbackLocale: 'en', defaultNamespace: 'mail' });
+```
+
+Declare which namespaces must never reach the browser on the plugin — they are
+dropped from `virtual:sigx-i18n/catalogs` and become the entire content of
+`virtual:sigx-i18n/server-catalogs`:
+
+```ts
+i18n({ localesDir: 'src/locales', masterLocale: 'en', serverOnly: ['mail', 'jobs/*'] })
+```
+
+Add `/// <reference types="@sigx/i18n/virtual" />` to the app's `env.d.ts` to
+type both virtual modules.
+
+### Locale-aware server functions
+
+`createRequestT` builds once and binds per request — negotiation runs off the
+request's `Accept-Language` / cookie / query, exactly like the client store:
+
+```ts
+import { createRequestT } from '@sigx/i18n/server';
+import catalogs from 'virtual:sigx-i18n/server-catalogs';
+
+const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
+
+export const greet = serverFn(async (rq) => requestT(rq.request).t('hello', { name: 'Ada' }));
+```
+
+`@sigx/server` is not imported in either direction — you pass `rq.request`, so
+the same helper works from a plain fetch handler in a platform entry.
 
 ## Works on any sigx renderer (incl. lynx)
 

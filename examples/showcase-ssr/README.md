@@ -50,8 +50,11 @@ pnpm --filter @sigx/i18n-showcase-ssr-example start
   English; Swedish falls back to it.
 - **Plurals / number / date** via the lightweight formatter (`app` namespace).
 - **A server-only namespace** — `/mail` (and `/mail?lang=sv`) renders a localized
-  email with `@sigx/i18n/server`. Its `mail` catalog is excluded from the client
-  loader's glob, so it never ships to the browser.
+  email with `@sigx/i18n/server`, whose catalogs are read off disk by
+  `loadCatalogs()` from `@sigx/i18n/server/node`. Its `mail` catalog is excluded
+  from the client loader's glob, so it never ships to the browser. (On an edge
+  runtime the same `createServerT` call takes
+  `virtual:sigx-i18n/server-catalogs` instead — no filesystem, no `node:` import.)
 
 ## Verify the SSR is real
 

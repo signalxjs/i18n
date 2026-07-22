@@ -194,3 +194,138 @@ export function createDetectors(options: DetectionOptions = {}): Detector[] {
     });
     return [...(options.detectors ?? []), ...builtins];
 }
+
+// ── Request adapters ────────────────────────────────────────────────────────
+// Structural types rather than the DOM/undici globals: this module has to
+// compile in a lynx/terminal build with no `Request` in lib, and the shapes
+// below are equally satisfied by a WinterCG `Request` (workerd, Deno, Bun) and
+// a Node `IncomingMessage`.
+
+/** Minimal structural view of a `Headers`-like object. */
+export interface HeadersLike {
+    forEach(callback: (value: string, key: string) => void): void;
+}
+
+/** Anything carrying request headers and (optionally) a URL. */
+export interface RequestLike {
+    /** Absolute (`Request.url`) or path-only (`IncomingMessage.url`) — both resolve. */
+    url?: string;
+    headers: HeadersLike | Record<string, string | string[] | undefined>;
+}
+
+/**
+ * Build a `DetectionContext` from a request. The `Accept-Language` and `Cookie`
+ * headers reach the built-in detectors unchanged; `url` feeds `urlDetector`.
+ */
+export function detectionContextFromRequest(request: RequestLike): DetectionContext {
+    const headers: Record<string, string | string[] | undefined> = {};
+    const raw = request.headers as HeadersLike | Record<string, string | string[] | undefined>;
+    if (raw && typeof (raw as HeadersLike).forEach === 'function') {
+        (raw as HeadersLike).forEach((value, key) => {
+            headers[key.toLowerCase()] = value;
+        });
+    } else if (raw) {
+        for (const [key, value] of Object.entries(raw as Record<string, string | string[] | undefined>)) {
+            headers[key.toLowerCase()] = value;
+        }
+    }
+    return request.url ? { headers, url: request.url } : { headers };
+}
+
+/** Options for `resolveRequestLocale` — detection options plus the negotiation target. */
+export interface RequestLocaleOptions extends DetectionOptions {
+    /** Negotiation target set; empty/undefined accepts any locale. */
+    supported?: readonly string[];
+    /** Master locale, returned when nothing matches. */
+    fallbackLocale: string;
+}
+
+/**
+ * Resolve the locale for one request — the single call a platform entry or a
+ * server function makes. An explicit `context` is layered ON TOP of the
+ * request-derived one, so a caller can override (e.g. a session-stored locale
+ * via `getStored`) without losing the headers.
+ */
+export function resolveRequestLocale(request: RequestLike, options: RequestLocaleOptions): string {
+    const { supported, fallbackLocale, context, ...detection } = options;
+    const ctx: DetectionContext = { ...detectionContextFromRequest(request), ...context };
+    return detectLocale(createDetectors({ ...detection, context: ctx }), ctx, supported, fallbackLocale);
+}
+
+// ── Server-round-trip locale switching ──────────────────────────────────────
+// The two primitives behind the zero-JS locale switch: a link that carries the
+// locale, and the `Set-Cookie` that makes the choice stick for later requests.
+
+/** Default cookie name — matches `cookieDetector()`'s default. */
+export const LOCALE_COOKIE = 'locale';
+
+export interface LocaleCookieOptions {
+    /** Cookie name. Default `'locale'` (`LOCALE_COOKIE`). */
+    name?: string;
+    /** Lifetime in seconds. Default one year. */
+    maxAge?: number;
+    /** Cookie path. Default `'/'`. */
+    path?: string;
+    /** Default `'Lax'` — a top-level locale link must still send the cookie. */
+    sameSite?: 'Lax' | 'Strict' | 'None';
+    secure?: boolean;
+    domain?: string;
+    /**
+     * Default **false** on purpose: `cookieDetector` reads `document.cookie` on
+     * the client, so an httpOnly locale cookie would make the client detector
+     * disagree with the server. Only set this if nothing client-side detects.
+     */
+    httpOnly?: boolean;
+}
+
+/** Build the `Set-Cookie` value that persists a locale choice across requests. */
+export function localeCookie(locale: string, options: LocaleCookieOptions = {}): string {
+    const {
+        name = LOCALE_COOKIE,
+        maxAge = 60 * 60 * 24 * 365,
+        path = '/',
+        sameSite = 'Lax',
+        secure,
+        domain,
+        httpOnly
+    } = options;
+    const parts = [`${name}=${encodeURIComponent(locale)}`, `Path=${path}`, `Max-Age=${maxAge}`, `SameSite=${sameSite}`];
+    if (domain) parts.push(`Domain=${domain}`);
+    if (secure) parts.push('Secure');
+    if (httpOnly) parts.push('HttpOnly');
+    return parts.join('; ');
+}
+
+export interface LocaleSwitchOptions {
+    /** Query param carrying the locale. Default `'lang'`; `false` to omit it. */
+    param?: string | false;
+    /** Also rewrite the leading path segment (`/en/…`), mirroring `pathLocale`. */
+    path?: boolean;
+    /** Locales recognised as a leading path segment; without it, a BCP-47-shaped segment is assumed. */
+    supported?: readonly string[];
+}
+
+const LOCALE_SEGMENT = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+
+/**
+ * The href for "switch to `locale`" — the whole zero-JS locale switch on the
+ * client side. Everything else in the URL is preserved, so the user lands back
+ * on the page they were reading.
+ */
+export function localeSwitchUrl(url: string | URL, locale: string, options: LocaleSwitchOptions = {}): string {
+    const { param = 'lang', path = false, supported } = options;
+    const relative = typeof url === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(url);
+    const parsed = typeof url === 'string' ? new URL(url, 'http://localhost') : new URL(url.href);
+
+    if (param) parsed.searchParams.set(param, locale);
+    if (path) {
+        const segments = parsed.pathname.split('/').filter(Boolean);
+        const first = segments[0];
+        const isLocale = first !== undefined && (supported ? supported.includes(first) : LOCALE_SEGMENT.test(first));
+        if (isLocale) segments[0] = locale;
+        else segments.unshift(locale);
+        parsed.pathname = `/${segments.join('/')}`;
+    }
+
+    return relative ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.href;
+}

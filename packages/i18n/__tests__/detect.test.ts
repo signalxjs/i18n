@@ -9,7 +9,11 @@ import {
     urlDetector,
     cookieDetector,
     browserDetector,
-    settingsDetector
+    settingsDetector,
+    detectionContextFromRequest,
+    resolveRequestLocale,
+    localeCookie,
+    localeSwitchUrl
 } from '../src/detect.js';
 
 describe('parseAcceptLanguage', () => {
@@ -103,5 +107,95 @@ describe('detectLocale — ordered chain', () => {
         const nativeDetector = { name: 'native', detect: () => 'de' };
         const ctx = { cookies: { locale: 'sv' } }; // built-in would say sv
         expect(detectLocale(createDetectors({ detectors: [nativeDetector] }), ctx, supported, 'en')).toBe('de');
+    });
+});
+
+describe('detectionContextFromRequest', () => {
+    it('lower-cases Headers into the detection context', () => {
+        const ctx = detectionContextFromRequest(
+            new Request('https://example.test/page?lang=sv', { headers: { 'Accept-Language': 'de' } })
+        );
+        expect(ctx.headers?.['accept-language']).toBe('de');
+        expect(ctx.url).toBe('https://example.test/page?lang=sv');
+    });
+
+    it('accepts a Node-style header record and a path-only url', () => {
+        const ctx = detectionContextFromRequest({ url: '/page', headers: { 'ACCEPT-LANGUAGE': 'sv' } });
+        expect(ctx.headers?.['accept-language']).toBe('sv');
+        expect(ctx.url).toBe('/page');
+    });
+
+    it('omits url when the request has none', () => {
+        expect(detectionContextFromRequest({ headers: {} }).url).toBeUndefined();
+    });
+});
+
+describe('resolveRequestLocale', () => {
+    const opts = { supported: ['en', 'sv', 'de'], fallbackLocale: 'en' };
+
+    it('runs the default chain over a request', () => {
+        expect(
+            resolveRequestLocale(new Request('https://x.test/', { headers: { 'accept-language': 'sv' } }), opts)
+        ).toBe('sv');
+    });
+
+    it('lets an explicit context override the request-derived one', () => {
+        const request = new Request('https://x.test/', { headers: { 'accept-language': 'sv' } });
+        const locale = resolveRequestLocale(request, {
+            ...opts,
+            order: ['settings', 'browser'],
+            context: { getStored: () => 'de' }
+        });
+        expect(locale).toBe('de');
+    });
+});
+
+describe('localeCookie', () => {
+    it('builds a Set-Cookie that the client detector can still read', () => {
+        const cookie = localeCookie('sv');
+        expect(cookie).toContain('locale=sv');
+        expect(cookie).toContain('Path=/');
+        expect(cookie).toContain('SameSite=Lax');
+        expect(cookie).not.toContain('HttpOnly'); // cookieDetector reads document.cookie
+    });
+
+    it('honours name, lifetime and security flags', () => {
+        const cookie = localeCookie('sv', { name: 'lang', maxAge: 60, secure: true, httpOnly: true });
+        expect(cookie.startsWith('lang=sv')).toBe(true);
+        expect(cookie).toContain('Max-Age=60');
+        expect(cookie).toContain('Secure');
+        expect(cookie).toContain('HttpOnly');
+    });
+});
+
+describe('localeSwitchUrl', () => {
+    it('sets the query param and preserves everything else', () => {
+        expect(localeSwitchUrl('/docs?page=2#top', 'sv')).toBe('/docs?page=2&lang=sv#top');
+    });
+
+    it('replaces an existing locale param rather than appending', () => {
+        expect(localeSwitchUrl('/docs?lang=en', 'sv')).toBe('/docs?lang=sv');
+    });
+
+    it('keeps an absolute URL absolute', () => {
+        expect(localeSwitchUrl('https://x.test/a', 'sv')).toBe('https://x.test/a?lang=sv');
+    });
+
+    it('rewrites a leading locale segment in path mode', () => {
+        expect(localeSwitchUrl('/en/docs', 'sv', { param: false, path: true, supported: ['en', 'sv'] })).toBe(
+            '/sv/docs'
+        );
+    });
+
+    it('prepends the locale when the path has none', () => {
+        expect(localeSwitchUrl('/docs', 'sv', { param: false, path: true, supported: ['en', 'sv'] })).toBe(
+            '/sv/docs'
+        );
+    });
+
+    it('does not mistake a non-locale first segment for a locale', () => {
+        expect(localeSwitchUrl('/documentation', 'sv', { param: false, path: true, supported: ['en', 'sv'] })).toBe(
+            '/sv/documentation'
+        );
     });
 });
