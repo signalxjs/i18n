@@ -324,8 +324,13 @@ const LOCALE_SEGMENT = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
  */
 export function localeSwitchUrl(url: string | URL, locale: string, options: LocaleSwitchOptions = {}): string {
     const { param = 'lang', path = false, supported } = options;
-    const relative = typeof url === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(url);
-    const parsed = typeof url === 'string' ? new URL(url, 'http://localhost') : new URL(url.href);
+    // Three input shapes, three output shapes — a protocol-relative `//host/a`
+    // must come back protocol-relative, not collapsed to `/a` (dropping the host)
+    // and not forced onto the parsing base's scheme.
+    const isString = typeof url === 'string';
+    const protocolRelative = isString && url.startsWith('//');
+    const relative = isString && !protocolRelative && !/^[a-z][a-z0-9+.-]*:/i.test(url);
+    const parsed = isString ? new URL(url, 'http://localhost') : new URL(url.href);
 
     if (param) parsed.searchParams.set(param, locale);
     if (path) {
@@ -337,5 +342,8 @@ export function localeSwitchUrl(url: string | URL, locale: string, options: Loca
         parsed.pathname = `/${segments.join('/')}`;
     }
 
-    return relative ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.href;
+    const tail = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    if (relative) return tail;
+    if (protocolRelative) return `//${parsed.host}${tail}`;
+    return parsed.href;
 }

@@ -97,10 +97,15 @@ function dtsPath(options: I18nViteOptions): string {
     return options.dtsOutFile ? resolve(options.dtsOutFile) : resolve(join(options.localesDir, '..', 'i18n.gen.d.ts'));
 }
 
-/** Run the completeness check over the catalog tree on disk. */
-export async function runI18nCheck(options: I18nViteOptions): Promise<CheckResult> {
-    const entries = await scanDir(options.localesDir);
-    return checkCatalogs(entries, {
+/**
+ * Run the completeness check over the catalog tree on disk.
+ *
+ * `entries` is an optional already-scanned tree: the plugin scans once and feeds
+ * the same result to the gate, the codegen and the virtual modules.
+ */
+export async function runI18nCheck(options: I18nViteOptions, entries?: CatalogEntry[]): Promise<CheckResult> {
+    const scanned = entries ?? (await scanDir(options.localesDir));
+    return checkCatalogs(scanned, {
         masterLocale: options.masterLocale,
         strict: options.strict,
         ignoreMissing: options.ignoreMissing,
@@ -108,10 +113,13 @@ export async function runI18nCheck(options: I18nViteOptions): Promise<CheckResul
     });
 }
 
-/** Generate the `.d.ts` and write it (only when the content changed). Returns the path. */
-export async function writeI18nTypes(options: I18nViteOptions): Promise<string> {
-    const entries = await scanDir(options.localesDir);
-    const manifest = buildManifest(entries, options.masterLocale);
+/**
+ * Generate the `.d.ts` and write it (only when the content changed). Returns the
+ * path. `entries` is an optional already-scanned tree — see `runI18nCheck`.
+ */
+export async function writeI18nTypes(options: I18nViteOptions, entries?: CatalogEntry[]): Promise<string> {
+    const scanned = entries ?? (await scanDir(options.localesDir));
+    const manifest = buildManifest(scanned, options.masterLocale);
     const content = generateDts(manifest);
     const out = dtsPath(options);
     let existing: string | null = null;
@@ -139,13 +147,19 @@ export function i18n(options: I18nViteOptions): Plugin {
     const doCheck = options.check ?? true;
     const out = dtsPath(options);
 
+    const isServerOnly = namespaceMatcher(options.serverOnly);
+    // ONE scan per build / per catalog edit, shared by the codegen, the gate and
+    // the virtual modules — dropped whenever a catalog file changes.
+    let entries: Promise<CatalogEntry[]> | null = null;
+    const catalogEntries = (): Promise<CatalogEntry[]> => (entries ??= scanDir(options.localesDir));
+
     const regenerate = async (): Promise<void> => {
-        if (genTypes) await writeI18nTypes(options);
+        if (genTypes) await writeI18nTypes(options, await catalogEntries());
     };
 
     const runGate = async (fail: (msg: string) => void): Promise<void> => {
         if (!doCheck) return;
-        const result = await runI18nCheck(options);
+        const result = await runI18nCheck(options, await catalogEntries());
         if (result.warnings.length) {
             console.warn(`\n[@sigx/i18n] catalog warnings:\n${formatReport({ ...result, errors: [] })}\n`);
         }
@@ -153,12 +167,6 @@ export function i18n(options: I18nViteOptions): Plugin {
             fail(`[@sigx/i18n] incomplete catalogs — build blocked:\n${formatReport({ ...result, warnings: [] })}`);
         }
     };
-
-    const isServerOnly = namespaceMatcher(options.serverOnly);
-    // Scanned once per build/dev-session and dropped whenever a catalog file
-    // changes, so `load` never re-walks the tree per importing module.
-    let entries: Promise<CatalogEntry[]> | null = null;
-    const catalogEntries = (): Promise<CatalogEntry[]> => (entries ??= scanDir(options.localesDir));
 
     return {
         name: '@sigx/i18n',
