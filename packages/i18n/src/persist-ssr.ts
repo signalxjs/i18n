@@ -4,7 +4,7 @@
  * machinery of our own.
  *
  * Order matters (per @sigx/store docs): `ssrState` FIRST (synchronous seed of
- * the server-rendered locale/target + loaded catalogs), then `persist` (whose
+ * the server-rendered locale + loaded catalogs), then `persist` (whose
  * possibly-async hydration overrides the locale with the device-local choice
  * when present).
  *
@@ -53,14 +53,17 @@ export interface PersistSSROptions {
 
 /**
  * The seed `ssrState` consumed, kept for later store instances in the same
- * document (see the module comment). Client-only by construction: `hydrated` is
- * never true on the server, so nothing is ever written here during a render —
- * and the reads are additionally gated on `isLiveClient()`, so a long-lived Node
- * process can never carry one request's locale into another.
+ * document (see the module comment). Both the write and the read are gated on
+ * `isLiveClient()`, so a long-lived Node process can never carry one request's
+ * locale into another — belt and braces, since `hydrated` is already never true
+ * on the server.
  */
 let documentSeed: { locale: string; messages: unknown } | null = null;
 
-/** Test seam: drop the remembered document seed. */
+/**
+ * Internal test seam: drop the remembered document seed. Not exported from the
+ * package root — nothing outside the suite should depend on it.
+ */
 export function resetDocumentSeed(): void {
     documentSeed = null;
 }
@@ -100,13 +103,13 @@ export function installPersistSSR<TState extends PersistSSRState>(
     let ssrHydrated = doSSR ? ssrState(ctx, slice, { pick: ssrPick }).hydrated : false;
 
     // 1b) Consume-once repair, for islands and separately-upgraded boundaries.
-    if (doSSR) {
+    if (doSSR && isLiveClient()) {
         if (ssrHydrated) {
             documentSeed = {
                 locale: slice.state.locale,
                 messages: withMessages ? cloneMessages(slice.state.messages) : undefined
             };
-        } else if (documentSeed && isLiveClient()) {
+        } else if (documentSeed) {
             // Re-apply what the server sent. `persist` still runs after this, so
             // a device-local choice made since (e.g. the user switched locale in
             // another island) keeps winning — same precedence as instance #1.

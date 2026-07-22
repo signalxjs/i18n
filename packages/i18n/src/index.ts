@@ -41,7 +41,10 @@ export {
 } from './detect.js';
 export type { Detector, DetectionContext, DetectionOptions } from './detect.js';
 
-export { installPersistSSR, resetDocumentSeed } from './persist-ssr.js';
+// `resetDocumentSeed` is deliberately NOT re-exported: it is an internal test
+// seam (imported from './persist-ssr.js' directly by the suite), and putting it
+// on the package root would commit us to it semver-wise.
+export { installPersistSSR } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
 
 export { useTranslation, useLocale, createTranslator } from './accessor.js';
