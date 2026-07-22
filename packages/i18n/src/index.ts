@@ -55,6 +55,9 @@ export type {
     LocaleSwitchOptions
 } from './detect.js';
 
+// `resetDocumentSeed` is deliberately NOT re-exported: it is an internal test
+// seam (imported from './persist-ssr.js' directly by the suite), and putting it
+// on the package root would commit us to it semver-wise.
 export { installPersistSSR } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
 

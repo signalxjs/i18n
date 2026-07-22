@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { defineApp, jsx } from '@sigx/runtime-core';
 import { useI18n, useI18nConfig, type I18nRuntimeConfig } from '../src/store.js';
+import { resetDocumentSeed } from '../src/persist-ssr.js';
 
 function setup(config: I18nRuntimeConfig) {
     const app = defineApp(jsx('div', {}));
@@ -22,6 +23,7 @@ const base = (over: Partial<I18nRuntimeConfig> = {}): I18nRuntimeConfig => ({
 beforeEach(() => {
     localStorage.clear();
     delete (window as unknown as { __SIGX_ASYNC__?: unknown }).__SIGX_ASYNC__;
+    resetDocumentSeed(); // each test is its own "document"
 });
 
 describe('detection at init', () => {
@@ -65,23 +67,75 @@ describe('persistence round-trip', () => {
 });
 
 describe('SSR state transfer', () => {
-    it('seeds locale + messages from the server blob (consume-once) and skips detection', async () => {
+    const seedBlob = () => {
         (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
             'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo' } } } }
         };
+    };
 
+    it('seeds locale + messages from the server blob and skips detection', async () => {
+        seedBlob();
         const store = setup(base());
         await store.whenReady;
 
         expect(store.ssrHydrated).toBe(true);
         expect(store.locale).toBe('de'); // server seed overrides detection
         expect(store.translateKey('common', 'hi')).toBe('Hallo');
+    });
 
-        // consume-once: a second instance starts from defaults (no leftover seed)
-        const store2 = setup(base());
-        await store2.whenReady;
-        expect(store2.ssrHydrated).toBe(false);
-        expect(store2.locale).toBe('en');
+    // `@sigx/store`'s ssrState is consume-once (it deletes its blob entry). With
+    // islands, every island root is its own scope and so its own store — without
+    // the remembered seed, island #2 would render in the wrong language.
+    it('re-seeds a SECOND instance in the same document (islands, resumed boundaries)', async () => {
+        seedBlob();
+        const first = setup(base({ persistence: { persist: false } }));
+        await first.whenReady;
+        expect(first.locale).toBe('de');
+
+        const second = setup(base({ persistence: { persist: false } }));
+        await second.whenReady;
+
+        expect(second.ssrHydrated).toBe(true);
+        expect(second.locale).toBe('de');
+        expect(second.translateKey('common', 'hi')).toBe('Hallo');
+    });
+
+    it('gives each instance its own catalog tree (no shared mutation)', async () => {
+        seedBlob();
+        const first = setup(base({ persistence: { persist: false } }));
+        await first.whenReady;
+        const second = setup(base({ persistence: { persist: false } }));
+        await second.whenReady;
+
+        second.addMessages('de', 'common', { hi: 'Servus' });
+        expect(second.translateKey('common', 'hi')).toBe('Servus');
+        expect(first.translateKey('common', 'hi')).toBe('Hallo'); // untouched
+    });
+
+    it('does not resurrect a seed once the document seed is cleared', async () => {
+        seedBlob();
+        const first = setup(base());
+        await first.whenReady;
+        expect(first.locale).toBe('de');
+
+        resetDocumentSeed(); // a new document
+        const other = setup(base({ persistence: false }));
+        await other.whenReady;
+        expect(other.ssrHydrated).toBe(false);
+        expect(other.locale).toBe('en'); // detection again
+    });
+
+    it('transferMessages:false takes the locale only (the resumable page)', async () => {
+        (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
+            'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo' } } } }
+        };
+
+        const store = setup(base({ persistence: { transferMessages: false, persist: false }, load: undefined }));
+        await store.whenReady;
+
+        expect(store.ssrHydrated).toBe(true);
+        expect(store.locale).toBe('de');
+        expect(store.translateKey('common', 'hi')).toBe('hi'); // catalogs never transferred
     });
 });
 
