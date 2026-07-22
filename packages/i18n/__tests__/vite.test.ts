@@ -86,3 +86,70 @@ describe('i18n() plugin build gate', () => {
         await expect(runBuildStart(plugin)).resolves.toBeUndefined();
     });
 });
+
+describe('virtual catalog modules', () => {
+    const load = async (plugin: ReturnType<typeof i18n>, id: string): Promise<string | null> => {
+        const resolved = (plugin.resolveId as (id: string) => string | null)(id);
+        if (!resolved) return null;
+        return (await (plugin.load as (id: string) => Promise<string | null>)(resolved)) ?? null;
+    };
+    const tree = (code: string) => JSON.parse(code.replace(/^export default /, '').replace(/;$/, ''));
+
+    it('inlines the catalog tree, so a bundled edge build needs no filesystem', async () => {
+        write('sv/cart.json', { title: 'Kundvagn', hi: 'Hej {name}' });
+        const plugin = i18n({ localesDir: dir, masterLocale: 'en', generateTypes: false, check: false });
+        const code = await load(plugin, 'virtual:sigx-i18n/catalogs');
+        expect(code).not.toBeNull();
+        expect(tree(code as string)).toEqual({
+            en: { cart: { title: 'Cart', hi: 'Hi {name}' } },
+            sv: { cart: { title: 'Kundvagn', hi: 'Hej {name}' } }
+        });
+    });
+
+    it('splits serverOnly namespaces out of the client tree', async () => {
+        write('en/mail.json', { subject: 'Hello' });
+        write('sv/mail.json', { subject: 'Hej' });
+        write('sv/cart.json', { title: 'Kundvagn', hi: 'Hej {name}' });
+        const plugin = i18n({
+            localesDir: dir,
+            masterLocale: 'en',
+            generateTypes: false,
+            check: false,
+            serverOnly: ['mail']
+        });
+
+        const client = tree((await load(plugin, 'virtual:sigx-i18n/catalogs')) as string);
+        expect(client.en.mail).toBeUndefined();
+        expect(client.en.cart).toBeDefined();
+
+        const server = tree((await load(plugin, 'virtual:sigx-i18n/server-catalogs')) as string);
+        expect(server.en.mail.subject).toBe('Hello');
+        expect(server.sv.mail.subject).toBe('Hej');
+        expect(server.en.cart).toBeUndefined();
+    });
+
+    it('matches serverOnly globs within and across namespace segments', async () => {
+        write('en/jobs/welcome.json', { a: 'A' });
+        write('en/internal/deep/audit.json', { b: 'B' });
+        write('sv/cart.json', { title: 'Kundvagn', hi: 'Hej {name}' });
+        const plugin = i18n({
+            localesDir: dir,
+            masterLocale: 'en',
+            generateTypes: false,
+            check: false,
+            serverOnly: ['jobs/*', 'internal/**']
+        });
+
+        const server = tree((await load(plugin, 'virtual:sigx-i18n/server-catalogs')) as string);
+        expect(Object.keys(server.en).sort()).toEqual(['internal/deep/audit', 'jobs/welcome']);
+
+        const client = tree((await load(plugin, 'virtual:sigx-i18n/catalogs')) as string);
+        expect(Object.keys(client.en)).toEqual(['cart']);
+    });
+
+    it('ignores ids it does not own', async () => {
+        const plugin = i18n({ localesDir: dir, masterLocale: 'en', generateTypes: false, check: false });
+        expect((plugin.resolveId as (id: string) => string | null)('virtual:something-else')).toBeNull();
+        expect(await (plugin.load as (id: string) => Promise<string | null>)('\0virtual:something-else')).toBeNull();
+    });
+});

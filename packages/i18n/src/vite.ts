@@ -16,7 +16,17 @@
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Plugin } from 'vite';
-import { buildManifest, checkCatalogs, generateDts, formatReport, scanDir, type CheckResult } from './manifest.js';
+import {
+    buildManifest,
+    checkCatalogs,
+    generateDts,
+    formatReport,
+    scanDir,
+    type CatalogEntry,
+    type CheckResult
+} from './manifest.js';
+import type { MessageTree } from './types.js';
+
 export interface I18nViteOptions {
     /** Catalog root: `<localesDir>/<locale>/<namespace>.json` (namespaces may be nested). */
     localesDir: string;
@@ -34,6 +44,53 @@ export interface I18nViteOptions {
     ignoreMissing?: string[];
     /** Locales to skip entirely (work-in-progress). */
     ignoreLocales?: string[];
+    /**
+     * Namespaces that must never reach the browser — mail templates, job
+     * notifications, PDF copy. Glob-ish patterns over the namespace path:
+     * `*` matches within one segment, `**` across segments (`'mail'`,
+     * `'jobs/*'`, `'internal/**'`).
+     *
+     * They are excluded from `virtual:sigx-i18n/catalogs` and are the entire
+     * content of `virtual:sigx-i18n/server-catalogs`.
+     */
+    serverOnly?: string[];
+}
+
+// ── Virtual catalog modules ─────────────────────────────────────────────────
+// A bundled edge build (workerd, Deno, the vercel/netlify adapters) has no
+// filesystem, so the catalogs have to become code — the same move core made
+// with `virtual:sigx-app`. Both ids resolve to an inlined `MessageTree`.
+
+const CLIENT_ID = 'virtual:sigx-i18n/catalogs';
+const SERVER_ID = 'virtual:sigx-i18n/server-catalogs';
+const RESOLVED = (id: string) => `\0${id}`;
+
+/** Compile a namespace glob (`*` within a segment, `**` across) to a regexp. */
+function namespaceMatcher(patterns: string[] | undefined): (namespace: string) => boolean {
+    if (!patterns || patterns.length === 0) return () => false;
+    const regexps = patterns.map(pattern => {
+        const source = pattern
+            .split('**')
+            .map(part =>
+                part
+                    .split('*')
+                    .map(chunk => chunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                    .join('[^/]*')
+            )
+            .join('.*');
+        return new RegExp(`^${source}$`);
+    });
+    return namespace => regexps.some(re => re.test(namespace));
+}
+
+/** Build the `messages[locale][namespace]` tree for the entries a side is allowed to see. */
+function treeFor(entries: CatalogEntry[], keep: (entry: CatalogEntry) => boolean): MessageTree {
+    const tree: MessageTree = {};
+    for (const entry of entries) {
+        if (!keep(entry)) continue;
+        (tree[entry.locale] ??= {})[entry.namespace] = entry.catalog;
+    }
+    return tree;
 }
 
 function dtsPath(options: I18nViteOptions): string {
@@ -97,13 +154,33 @@ export function i18n(options: I18nViteOptions): Plugin {
         }
     };
 
+    const isServerOnly = namespaceMatcher(options.serverOnly);
+    // Scanned once per build/dev-session and dropped whenever a catalog file
+    // changes, so `load` never re-walks the tree per importing module.
+    let entries: Promise<CatalogEntry[]> | null = null;
+    const catalogEntries = (): Promise<CatalogEntry[]> => (entries ??= scanDir(options.localesDir));
+
     return {
         name: '@sigx/i18n',
 
         async buildStart() {
+            entries = null;
             await regenerate();
             // `this.error` aborts the build (Rollup/Vite) with the message.
             await runGate(msg => this.error(msg));
+        },
+
+        resolveId(id) {
+            if (id === CLIENT_ID || id === SERVER_ID) return RESOLVED(id);
+            return null;
+        },
+
+        async load(id) {
+            if (id !== RESOLVED(CLIENT_ID) && id !== RESOLVED(SERVER_ID)) return null;
+            const all = await catalogEntries();
+            const wantServer = id === RESOLVED(SERVER_ID);
+            const tree = treeFor(all, e => isServerOnly(e.namespace) === wantServer);
+            return `export default ${JSON.stringify(tree)};`;
         },
 
         async configureServer(server) {
@@ -118,6 +195,14 @@ export function i18n(options: I18nViteOptions): Plugin {
             const onChange = async (file: string) => {
                 const norm = resolve(file);
                 if (!norm.startsWith(dir) || !norm.endsWith('.json') || norm === out) return;
+                // Drop the scan cache and evict both virtual modules, so an
+                // importer of the inlined tree sees the edit and not a stale
+                // literal baked in at first load.
+                entries = null;
+                for (const virtualId of [CLIENT_ID, SERVER_ID]) {
+                    const mod = server.moduleGraph.getModuleById(RESOLVED(virtualId));
+                    if (mod) server.moduleGraph.invalidateModule(mod);
+                }
                 await regenerate();
                 // Report (don't crash the dev server) then reload the page.
                 await runGate(msg => server.config.logger.error(msg));
