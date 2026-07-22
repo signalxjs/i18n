@@ -45,6 +45,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `resolveRequestLocale`, `localeCookie`, `localeSwitchUrl`, `LOCALE_COOKIE` — the
   primitives behind server-side detection and the zero-JS, server-round-trip
   locale switch. Pure and structurally typed, so they compile without DOM lib.
+- **`provideI18nConfig(options)`** — makes the config reachable with **no app**.
+  Under `@sigx/resume` there is no client app: an upgraded boundary is hydrated
+  directly, so nothing installed `createI18n` and a boundary that translates
+  against client-changing state threw the moment it upgraded. Call this from a
+  module the boundary's chunk imports; the chunk loads only on upgrade, so a
+  zero-JS page stays zero-JS. Client-only (a process-wide config would be shared
+  by every SSR request, and `detection.context` carries request headers).
+  Resolution order is DI first, seam second.
+- **`examples/resume-i18n`** — the reference app, mirroring core's
+  `examples/resume`: zero-JS server-round-trip locale switch, translated copy
+  that never hydrates, a translated QRL boundary that upgrades and re-translates
+  in the browser, and a server function answering in the caller's language over a
+  `serverOnly` catalog. `pnpm smoke` runs 15 assertions against the production
+  build.
 - **`persistence.transferMessages`** (default `true`). Set `false` on a resumable
   page: it ships no component JS on load, so the catalogs in the transfer blob are
   bytes nothing reads — the server already rendered every string into the HTML.

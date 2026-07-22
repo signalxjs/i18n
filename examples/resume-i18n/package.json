@@ -1,0 +1,33 @@
+{
+  "name": "@sigx/i18n-resume-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Resumable, zero-JS localized page with @sigx/i18n — server-round-trip locale switch, translated QRL boundary, localized server function",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "build": "vite build --app",
+    "start": "cross-env NODE_ENV=production node --conditions production server.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@sigx/i18n": "workspace:^",
+    "@sigx/reactivity": "^0.12.0",
+    "@sigx/resume": "^0.12.0",
+    "@sigx/runtime-core": "^0.12.0",
+    "@sigx/runtime-dom": "^0.12.0",
+    "@sigx/server": "^0.12.0",
+    "@sigx/server-renderer": "^0.12.0",
+    "@sigx/store": "^0.9.0",
+    "express": "^5.2.1",
+    "sigx": "^0.12.0"
+  },
+  "devDependencies": {
+    "@sigx/vite": "^0.12.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "cross-env": "^10.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.0.3"
+  }
+}
