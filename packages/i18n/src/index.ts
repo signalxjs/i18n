@@ -41,7 +41,7 @@ export {
 } from './detect.js';
 export type { Detector, DetectionContext, DetectionOptions } from './detect.js';
 
-export { installPersistSSR } from './persist-ssr.js';
+export { installPersistSSR, resetDocumentSeed } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
 
 export { useTranslation, useLocale, createTranslator } from './accessor.js';

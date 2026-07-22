@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Only the first store instance in a document got the SSR seed.** `@sigx/store`'s
+  `ssrState` is consume-once — it deletes its entry from the transfer blob after
+  seeding. That is right for an ordinary store and wrong for i18n: with
+  `@sigx/ssr-islands` every island root is its own DI scope and therefore its own
+  `'scoped'` i18n store, and under `@sigx/resume` each separately-upgraded
+  boundary can be too, so **island #2 onward hydrated with no locale and no
+  catalogs** — wrong language, plus a refetch of catalogs the server had already
+  sent. The seed is now remembered and re-applied to later instances, each
+  getting its own copy of the tree (two stores sharing one object would let one's
+  `addMessages`/lazy load mutate the other's). Client-gated with `isLiveClient()`,
+  so a long-lived Node process can never carry one request's locale into another.
+  `resetDocumentSeed()` is exported as the test seam.
+
+### Added
+- **`persistence.transferMessages`** (default `true`). Set `false` on a resumable
+  page: it ships no component JS on load, so the catalogs in the transfer blob are
+  bytes nothing reads — the server already rendered every string into the HTML.
+  The locale still transfers, so a boundary that later upgrades knows its language
+  and fetches only the namespaces it needs.
+
 ### Changed / removed
 - **Removed the "target" axis.** The model is now `messages[locale][namespace]`.
   Lazy namespace loading already gives the per-surface payload split targets were
