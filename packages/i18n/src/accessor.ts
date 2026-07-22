@@ -12,6 +12,29 @@
  * and indexable (property access → child node). Resolution reads the store's
  * reactive `locale`/`messages` through `translateKey`, so every form is reactive
  * when evaluated inside a render or `computed`.
+ *
+ * ## Under `@sigx/resume`
+ *
+ * `t` is a **setup helper**, which decides what a resumed handler may capture.
+ * Reading it in the RENDER is free — that is how the server HTML is produced:
+ *
+ * ```tsx
+ * const count = ctx.signal(0);
+ * // ✅ the handler captures only the named signal → extracts to a QRL chunk
+ * return () => <button onClick={() => count.value++}>{t.label({ count: count.value })}</button>;
+ * ```
+ *
+ * CAPTURING it in a handler does not extract: the whole component falls back to
+ * wake-on-interaction, with a build-time warning naming the capture.
+ *
+ * ```tsx
+ * // ❌ `t` is a setup helper — not expressible through the resumed scope
+ * <button onClick={() => (msg.value = t.saved())}>save</button>
+ * ```
+ *
+ * Translate in the render, or pass the translated string in as a prop. When a
+ * boundary genuinely must re-translate in the browser (a plural of a live
+ * count), it needs config with no app present — see `provideI18nConfig`.
  */
 
 import type { Params, Schema } from './types.js';
