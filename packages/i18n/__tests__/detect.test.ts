@@ -185,6 +185,10 @@ describe('localeSwitchUrl', () => {
         expect(localeSwitchUrl('https://x.test/a', 'sv')).toBe('https://x.test/a?lang=sv');
     });
 
+    it('keeps a protocol-relative URL protocol-relative, host intact', () => {
+        expect(localeSwitchUrl('//cdn.test/a?x=1', 'sv')).toBe('//cdn.test/a?x=1&lang=sv');
+    });
+
     it('rewrites a leading locale segment in path mode', () => {
         expect(localeSwitchUrl('/en/docs', 'sv', { param: false, path: true, supported: ['en', 'sv'] })).toBe(
             '/sv/docs'
