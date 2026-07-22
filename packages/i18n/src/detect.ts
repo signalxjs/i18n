@@ -275,6 +275,7 @@ export interface LocaleCookieOptions {
     path?: string;
     /** Default `'Lax'` — a top-level locale link must still send the cookie. */
     sameSite?: 'Lax' | 'Strict' | 'None';
+    /** Adds `Secure`. Implied by `sameSite: 'None'`, which browsers reject without it. */
     secure?: boolean;
     domain?: string;
     /**
@@ -298,7 +299,9 @@ export function localeCookie(locale: string, options: LocaleCookieOptions = {}):
     } = options;
     const parts = [`${name}=${encodeURIComponent(locale)}`, `Path=${path}`, `Max-Age=${maxAge}`, `SameSite=${sameSite}`];
     if (domain) parts.push(`Domain=${domain}`);
-    if (secure) parts.push('Secure');
+    // `SameSite=None` is rejected outright by modern browsers unless the cookie
+    // is also `Secure` — emitting the pair would silently fail to persist.
+    if (secure || sameSite === 'None') parts.push('Secure');
     if (httpOnly) parts.push('HttpOnly');
     return parts.join('; ');
 }
