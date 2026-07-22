@@ -5,21 +5,26 @@
  * It reuses the exact same pure `translate` core (master fallback, locale chain)
  * and formatter as the client, but has zero dependency on sigx — no store, no
  * signals, no app — so it runs in a mailer worker with nothing else wired up.
- * Catalogs are read from the filesystem once and cached in memory.
  *
- * Server-only namespaces are simply files that live under `localesDir` and are
- * never exposed to the client loader's glob.
+ * **This entry is universal**: no `node:` imports, so it runs unchanged on
+ * workerd, Deno, Bun and inside a bundled edge build (the deploy adapters'
+ * server builds forbid `node:` specifiers). Catalogs arrive as data — from
+ * `virtual:sigx-i18n/server-catalogs` (emitted by `@sigx/i18n/vite`, the edge
+ * path) or from `loadCatalogs()` in `@sigx/i18n/server/node` (the fs path).
+ *
+ * Server-only namespaces are simply files the client loader's glob never sees;
+ * declare them as `serverOnly` on the Vite plugin to keep them out of the
+ * client catalog tree entirely.
  */
 
-import { readdir, readFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
 import { translate } from './translate.js';
 import { lightweightFormatter } from './formatter.js';
-import type { Catalog, Formatter, MessageTree, MissingInfo, Params } from './types.js';
+import { resolveRequestLocale, type DetectionOptions, type RequestLike } from './detect.js';
+import type { Formatter, MessageTree, MissingInfo, Params } from './types.js';
 
 export interface ServerI18nOptions {
-    /** Root catalog directory: `<localesDir>/<locale>/<namespace>.json` (namespaces may be nested). */
-    localesDir: string;
+    /** The catalog tree: `catalogs[locale][namespace]`. */
+    catalogs: MessageTree;
     /** Master locale, used when a key is untranslated. */
     fallbackLocale: string;
     /** Default namespace when a call omits one. Default `'translation'`. */
@@ -43,54 +48,22 @@ export interface ServerTranslator {
     t(key: string, params?: Params, scope?: ServerScope): string;
     /** Bind a locale (and optional namespace) into a simple `(key, params) => string`. */
     forLocale(locale: string, scope?: Omit<ServerScope, 'locale'>): (key: string, params?: Params) => string;
-    /** The loaded message tree (locale → namespace → catalog), for inspection. */
+    /** The message tree (locale → namespace → catalog), for inspection. */
     readonly messages: MessageTree;
 }
 
-async function readCatalog(file: string): Promise<Catalog | null> {
-    try {
-        return JSON.parse(await readFile(file, 'utf-8')) as Catalog;
-    } catch (err) {
-        if (__DEV__) console.error(`[@sigx/i18n/server] failed to read ${file}:`, err);
-        return null;
-    }
-}
-
-async function listDirs(dir: string): Promise<string[]> {
-    try {
-        return (await readdir(dir, { withFileTypes: true })).filter(e => e.isDirectory()).map(e => e.name);
-    } catch {
-        return [];
-    }
-}
-
-/** Recursively collect every `*.json` under `dir`, keyed by its namespace path (POSIX-style). */
-async function walkJson(dir: string, base: string, out: Map<string, string>): Promise<void> {
-    let entries;
-    try {
-        entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-        return;
-    }
-    for (const e of entries) {
-        const full = join(dir, e.name);
-        if (e.isDirectory()) {
-            await walkJson(full, base, out);
-        } else if (e.isFile() && e.name.endsWith('.json')) {
-            const ns = relative(base, full).slice(0, -'.json'.length).split(sep).join('/');
-            out.set(ns, full);
-        }
-    }
-}
-
 /**
- * Create a server translator, eagerly reading and caching every catalog under
- * `localesDir`. Layout is `<locale>/<namespace>.json`; namespaces may be nested
- * (`en/admin/users.json` → namespace `admin/users`).
+ * Create a server translator over an in-memory catalog tree.
+ *
+ * ```ts
+ * import catalogs from 'virtual:sigx-i18n/server-catalogs';
+ * const t = createServerT({ catalogs, fallbackLocale: 'en', defaultNamespace: 'mail' });
+ * const m = t.forLocale('sv', { namespace: 'mail' });
+ * ```
  */
-export async function createServerT(options: ServerI18nOptions): Promise<ServerTranslator> {
+export function createServerT(options: ServerI18nOptions): ServerTranslator {
     const {
-        localesDir,
+        catalogs,
         fallbackLocale,
         defaultNamespace = 'translation',
         localeFallbacks,
@@ -98,25 +71,11 @@ export async function createServerT(options: ServerI18nOptions): Promise<ServerT
         onMissing
     } = options;
 
-    const tree: MessageTree = {};
-    for (const locale of await listDirs(localesDir)) {
-        const localeDir = join(localesDir, locale);
-        const files = new Map<string, string>();
-        await walkJson(localeDir, localeDir, files);
-        for (const [ns, file] of files) {
-            const catalog = await readCatalog(file);
-            if (catalog) {
-                tree[locale] ??= {};
-                tree[locale][ns] = catalog;
-            }
-        }
-    }
-
     const tconfig = { fallbackLocale, localeFallbacks, formatter, onMissing };
 
     const t: ServerTranslator['t'] = (key, params, scope) =>
         translate(
-            tree,
+            catalogs,
             key,
             params,
             { locale: scope?.locale ?? fallbackLocale, namespace: scope?.namespace ?? defaultNamespace },
@@ -126,5 +85,53 @@ export async function createServerT(options: ServerI18nOptions): Promise<ServerT
     const forLocale: ServerTranslator['forLocale'] = (locale, scope) => (key, params) =>
         t(key, params, { locale, namespace: scope?.namespace });
 
-    return { t, forLocale, messages: tree };
+    return { t, forLocale, messages: catalogs };
+}
+
+/** A translator already bound to one request's negotiated locale. */
+export interface RequestTranslator {
+    /** The locale detection resolved for this request. */
+    readonly locale: string;
+    /** Translate a key in this request's locale. */
+    t(key: string, params?: Params, scope?: Omit<ServerScope, 'locale'>): string;
+    /** Bind a namespace into a simple `(key, params) => string`. */
+    forNamespace(namespace: string): (key: string, params?: Params) => string;
+}
+
+export interface RequestTOptions extends ServerI18nOptions {
+    /** Negotiation target set; empty/undefined accepts any locale. */
+    supported?: readonly string[];
+    /** Detection chain options (order, cookie/url names, extra detectors). */
+    detection?: DetectionOptions;
+}
+
+/**
+ * Build once, bind per request — the shape a server function wants:
+ *
+ * ```ts
+ * const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
+ *
+ * export const greet = serverFn(async (rq) => requestT(rq.request).t('hello', { name: 'Ada' }));
+ * ```
+ *
+ * `@sigx/server` is deliberately NOT imported: the caller passes `rq.request`,
+ * so this stays usable from any handler (and from a plain fetch handler in a
+ * platform entry) with no dependency in either direction.
+ */
+export function createRequestT(options: RequestTOptions): (request: RequestLike) => RequestTranslator {
+    const { supported, detection, ...serverOptions } = options;
+    const translator = createServerT(serverOptions);
+
+    return request => {
+        const locale = resolveRequestLocale(request, {
+            ...detection,
+            supported,
+            fallbackLocale: serverOptions.fallbackLocale
+        });
+        return {
+            locale,
+            t: (key, params, scope) => translator.t(key, params, { ...scope, locale }),
+            forNamespace: namespace => translator.forLocale(locale, { namespace })
+        };
+    };
 }

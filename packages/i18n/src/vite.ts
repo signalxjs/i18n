@@ -16,7 +16,17 @@
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Plugin } from 'vite';
-import { buildManifest, checkCatalogs, generateDts, formatReport, scanDir, type CheckResult } from './manifest.js';
+import {
+    buildManifest,
+    checkCatalogs,
+    generateDts,
+    formatReport,
+    scanDir,
+    type CatalogEntry,
+    type CheckResult
+} from './manifest.js';
+import type { MessageTree } from './types.js';
+
 export interface I18nViteOptions {
     /** Catalog root: `<localesDir>/<locale>/<namespace>.json` (namespaces may be nested). */
     localesDir: string;
@@ -34,16 +44,68 @@ export interface I18nViteOptions {
     ignoreMissing?: string[];
     /** Locales to skip entirely (work-in-progress). */
     ignoreLocales?: string[];
+    /**
+     * Namespaces that must never reach the browser — mail templates, job
+     * notifications, PDF copy. Glob-ish patterns over the namespace path:
+     * `*` matches within one segment, `**` across segments (`'mail'`,
+     * `'jobs/*'`, `'internal/**'`).
+     *
+     * They are excluded from `virtual:sigx-i18n/catalogs` and are the entire
+     * content of `virtual:sigx-i18n/server-catalogs`.
+     */
+    serverOnly?: string[];
+}
+
+// ── Virtual catalog modules ─────────────────────────────────────────────────
+// A bundled edge build (workerd, Deno, the vercel/netlify adapters) has no
+// filesystem, so the catalogs have to become code — the same move core made
+// with `virtual:sigx-app`. Both ids resolve to an inlined `MessageTree`.
+
+const CLIENT_ID = 'virtual:sigx-i18n/catalogs';
+const SERVER_ID = 'virtual:sigx-i18n/server-catalogs';
+const RESOLVED = (id: string) => `\0${id}`;
+
+/** Compile a namespace glob (`*` within a segment, `**` across) to a regexp. */
+function namespaceMatcher(patterns: string[] | undefined): (namespace: string) => boolean {
+    if (!patterns || patterns.length === 0) return () => false;
+    const regexps = patterns.map(pattern => {
+        const source = pattern
+            .split('**')
+            .map(part =>
+                part
+                    .split('*')
+                    .map(chunk => chunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                    .join('[^/]*')
+            )
+            .join('.*');
+        return new RegExp(`^${source}$`);
+    });
+    return namespace => regexps.some(re => re.test(namespace));
+}
+
+/** Build the `messages[locale][namespace]` tree for the entries a side is allowed to see. */
+function treeFor(entries: CatalogEntry[], keep: (entry: CatalogEntry) => boolean): MessageTree {
+    const tree: MessageTree = {};
+    for (const entry of entries) {
+        if (!keep(entry)) continue;
+        (tree[entry.locale] ??= {})[entry.namespace] = entry.catalog;
+    }
+    return tree;
 }
 
 function dtsPath(options: I18nViteOptions): string {
     return options.dtsOutFile ? resolve(options.dtsOutFile) : resolve(join(options.localesDir, '..', 'i18n.gen.d.ts'));
 }
 
-/** Run the completeness check over the catalog tree on disk. */
-export async function runI18nCheck(options: I18nViteOptions): Promise<CheckResult> {
-    const entries = await scanDir(options.localesDir);
-    return checkCatalogs(entries, {
+/**
+ * Run the completeness check over the catalog tree on disk.
+ *
+ * `entries` is an optional already-scanned tree: the plugin scans once and feeds
+ * the same result to the gate, the codegen and the virtual modules.
+ */
+export async function runI18nCheck(options: I18nViteOptions, entries?: CatalogEntry[]): Promise<CheckResult> {
+    const scanned = entries ?? (await scanDir(options.localesDir));
+    return checkCatalogs(scanned, {
         masterLocale: options.masterLocale,
         strict: options.strict,
         ignoreMissing: options.ignoreMissing,
@@ -51,10 +113,13 @@ export async function runI18nCheck(options: I18nViteOptions): Promise<CheckResul
     });
 }
 
-/** Generate the `.d.ts` and write it (only when the content changed). Returns the path. */
-export async function writeI18nTypes(options: I18nViteOptions): Promise<string> {
-    const entries = await scanDir(options.localesDir);
-    const manifest = buildManifest(entries, options.masterLocale);
+/**
+ * Generate the `.d.ts` and write it (only when the content changed). Returns the
+ * path. `entries` is an optional already-scanned tree — see `runI18nCheck`.
+ */
+export async function writeI18nTypes(options: I18nViteOptions, entries?: CatalogEntry[]): Promise<string> {
+    const scanned = entries ?? (await scanDir(options.localesDir));
+    const manifest = buildManifest(scanned, options.masterLocale);
     const content = generateDts(manifest);
     const out = dtsPath(options);
     let existing: string | null = null;
@@ -82,13 +147,19 @@ export function i18n(options: I18nViteOptions): Plugin {
     const doCheck = options.check ?? true;
     const out = dtsPath(options);
 
+    const isServerOnly = namespaceMatcher(options.serverOnly);
+    // ONE scan per build / per catalog edit, shared by the codegen, the gate and
+    // the virtual modules — dropped whenever a catalog file changes.
+    let entries: Promise<CatalogEntry[]> | null = null;
+    const catalogEntries = (): Promise<CatalogEntry[]> => (entries ??= scanDir(options.localesDir));
+
     const regenerate = async (): Promise<void> => {
-        if (genTypes) await writeI18nTypes(options);
+        if (genTypes) await writeI18nTypes(options, await catalogEntries());
     };
 
     const runGate = async (fail: (msg: string) => void): Promise<void> => {
         if (!doCheck) return;
-        const result = await runI18nCheck(options);
+        const result = await runI18nCheck(options, await catalogEntries());
         if (result.warnings.length) {
             console.warn(`\n[@sigx/i18n] catalog warnings:\n${formatReport({ ...result, errors: [] })}\n`);
         }
@@ -101,9 +172,23 @@ export function i18n(options: I18nViteOptions): Plugin {
         name: '@sigx/i18n',
 
         async buildStart() {
+            entries = null;
             await regenerate();
             // `this.error` aborts the build (Rollup/Vite) with the message.
             await runGate(msg => this.error(msg));
+        },
+
+        resolveId(id) {
+            if (id === CLIENT_ID || id === SERVER_ID) return RESOLVED(id);
+            return null;
+        },
+
+        async load(id) {
+            if (id !== RESOLVED(CLIENT_ID) && id !== RESOLVED(SERVER_ID)) return null;
+            const all = await catalogEntries();
+            const wantServer = id === RESOLVED(SERVER_ID);
+            const tree = treeFor(all, e => isServerOnly(e.namespace) === wantServer);
+            return `export default ${JSON.stringify(tree)};`;
         },
 
         async configureServer(server) {
@@ -118,6 +203,14 @@ export function i18n(options: I18nViteOptions): Plugin {
             const onChange = async (file: string) => {
                 const norm = resolve(file);
                 if (!norm.startsWith(dir) || !norm.endsWith('.json') || norm === out) return;
+                // Drop the scan cache and evict both virtual modules, so an
+                // importer of the inlined tree sees the edit and not a stale
+                // literal baked in at first load.
+                entries = null;
+                for (const virtualId of [CLIENT_ID, SERVER_ID]) {
+                    const mod = server.moduleGraph.getModuleById(RESOLVED(virtualId));
+                    if (mod) server.moduleGraph.invalidateModule(mod);
+                }
                 await regenerate();
                 // Report (don't crash the dev server) then reload the page.
                 await runGate(msg => server.config.logger.error(msg));

@@ -13,6 +13,10 @@ docs/dist/
 # Hand-authored source .d.ts (ambient decls) live under src/ and must be tracked
 # — only built .d.ts under dist/ are outputs.
 !packages/i18n/src/**/*.d.ts
+# Ambient declarations for the Vite virtual modules — shipped as-is (it is a
+# published entry, `@sigx/i18n/virtual`), so it lives at the package root
+# rather than in src/, where nothing would emit it into dist/.
+!packages/i18n/virtual.d.ts
 *.js
 *.js.map
 

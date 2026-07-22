@@ -6,7 +6,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The server translator is now universal.** `@sigx/i18n/server` takes catalogs
+  as data (`createServerT({ catalogs, … })`) and has **no `node:` imports**, so it
+  runs unchanged on workerd, Deno, Bun and inside the bundled server builds the
+  `@sigx/cloudflare` / `@sigx/vercel` / `@sigx/netlify` adapters produce — where a
+  `node:` specifier fails the build. A new `edge-clean` test pins the invariant.
+- **`@sigx/i18n/server/node`** — the filesystem half, split off: `loadCatalogs(dir)`
+  reads `<localesDir>/<locale>/<namespace>.json` into a `MessageTree`. It re-exports
+  `createServerT`/`createRequestT`, so a Node caller still needs one import line.
+- **`createRequestT(options)`** — build once, bind per request. Returns
+  `(request) => { locale, t, forNamespace }`, negotiating from the request's
+  `Accept-Language` / cookie / query. Accepts a WinterCG `Request` or a Node
+  `{ url, headers }`. `@sigx/server` is deliberately not imported in either
+  direction — the caller passes `rq.request`.
+- **Virtual catalog modules** (`@sigx/i18n/vite`): `virtual:sigx-i18n/catalogs` and
+  `virtual:sigx-i18n/server-catalogs` inline the catalog tree as code, so an edge
+  build with no filesystem still has its translations. The new `serverOnly`
+  option (namespace globs — `'mail'`, `'jobs/*'`, `'internal/**'`) decides the
+  split; those namespaces never enter the client tree. Both modules are
+  invalidated by the existing catalog watcher in dev. Types ship as
+  `@sigx/i18n/virtual`.
+- **Request/locale-switch helpers** (`@sigx/i18n`): `detectionContextFromRequest`,
+  `resolveRequestLocale`, `localeCookie`, `localeSwitchUrl`, `LOCALE_COOKIE` — the
+  primitives behind server-side detection and the zero-JS, server-round-trip
+  locale switch. Pure and structurally typed, so they compile without DOM lib.
+
 ### Changed / removed
+- **`createServerT` no longer reads the filesystem** and is now synchronous. It
+  takes `{ catalogs }` instead of `{ localesDir }`; pair it with `loadCatalogs()`
+  from `@sigx/i18n/server/node` for the old behaviour.
 - **Removed the "target" axis.** The model is now `messages[locale][namespace]`.
   Lazy namespace loading already gives the per-surface payload split targets were
   for (a namespace loads only when first used). Use **hierarchical namespace

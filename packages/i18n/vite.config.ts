@@ -4,6 +4,7 @@ export default defineLibConfig({
     entry: {
         index: 'src/index.ts',
         server: 'src/server.ts',
+        'server-node': 'src/server-node.ts',
         vite: 'src/vite.ts'
     },
     // Keep the whole sigx runtime tier, node builtins, and the vite/@sigx/vite
