@@ -59,11 +59,56 @@ export interface I18nRuntimeConfig {
 }
 
 /**
+ * The client-side config seam (`docs/seams.md` shape): a resumable page has NO
+ * app on the client — `@sigx/resume` hydrates an upgraded boundary through
+ * `hydrateComponent` directly, so "app-less pages need no explicit client
+ * bootstrap" and there is no DI scope to have installed `createI18n` into.
+ *
+ * A boundary that translates against state which changes client-side therefore
+ * needs the config to reach it some other way: its chunk (or a module its chunk
+ * imports) calls `provideI18nConfig`, which stamps this global. The chunk loads
+ * only on upgrade, so a zero-JS page stays zero-JS.
+ */
+declare global {
+    // eslint-disable-next-line no-var
+    var __SIGX_I18N_CONFIG__: I18nRuntimeConfig | undefined;
+}
+
+/**
  * App-provided i18n config. Required (string-form injectable): resolving the
  * store without the `createI18n` plugin installed throws a structured DI error,
  * which is the intended failure mode.
  */
 export const useI18nConfig = defineInjectable<I18nRuntimeConfig>('sigx:i18n:config');
+
+/**
+ * DI first, the client seam second.
+ *
+ * Deliberately NOT a factory-form injectable with the seam read inside it: a
+ * factory's result is memoized as a global singleton, so the first resolution
+ * would pin the config forever — the seam could never be re-stamped, and the
+ * "nothing provided it" error could only ever be raised once per process.
+ */
+function resolveConfig(): I18nRuntimeConfig {
+    try {
+        return useI18nConfig();
+    } catch (diError) {
+        const seam = globalThis.__SIGX_I18N_CONFIG__;
+        if (seam) return seam;
+        if (__DEV__) {
+            // No `{ cause }` — the package targets ES2020, so it isn't in lib.
+            // The DI error's own text is appended instead, keeping SIGX202 visible.
+            throw new Error(
+                '[@sigx/i18n] no i18n config available. Install the plugin on the app ' +
+                    '(`app.use(createI18n({ … }))`), or — on a resumable page, where an upgraded ' +
+                    'boundary hydrates with no app at all — call `provideI18nConfig({ … })` from a ' +
+                    "module that boundary's chunk imports.\n\nUnderlying DI error: " +
+                    (diError instanceof Error ? diError.message : String(diError))
+            );
+        }
+        throw diError;
+    }
+}
 
 const loadKey = (l: string, ns: string) => `${l} ${ns}`;
 
@@ -72,7 +117,7 @@ const loadKey = (l: string, ns: string) => `${l} ${ns}`;
  * `app.runWithContext`) to resolve the per-app/per-request instance.
  */
 export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
-    const config = useI18nConfig();
+    const config = resolveConfig();
     const formatter = config.formatter ?? lightweightFormatter;
 
     const { state, signals, patch } = ctx.defineState({

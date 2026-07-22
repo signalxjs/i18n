@@ -76,5 +76,5 @@ export type {
 export { T, renderRich } from './component.js';
 export type { TProps, RichComponents } from './component.js';
 
-export { createI18n } from './plugin.js';
+export { createI18n, provideI18nConfig } from './plugin.js';
 export type { I18nOptions } from './plugin.js';
