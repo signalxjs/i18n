@@ -248,7 +248,14 @@ export interface RequestLocaleOptions extends DetectionOptions {
  */
 export function resolveRequestLocale(request: RequestLike, options: RequestLocaleOptions): string {
     const { supported, fallbackLocale, context, ...detection } = options;
-    const ctx: DetectionContext = { ...detectionContextFromRequest(request), ...context };
+    const fromRequest = detectionContextFromRequest(request);
+    const ctx: DetectionContext = {
+        ...fromRequest,
+        ...context,
+        // Merged per-header rather than replaced: a caller supplying one header
+        // must not silently drop the request's `Accept-Language`/`Cookie`.
+        headers: { ...fromRequest.headers, ...context?.headers }
+    };
     return detectLocale(createDetectors({ ...detection, context: ctx }), ctx, supported, fallbackLocale);
 }
 
