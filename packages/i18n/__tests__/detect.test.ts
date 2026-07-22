@@ -199,3 +199,26 @@ describe('localeSwitchUrl', () => {
         );
     });
 });
+
+describe('resolveRequestLocale — context merge', () => {
+    it('keeps request headers when the caller supplies a different one', () => {
+        // A caller adding e.g. a proxy header must not blank Accept-Language.
+        const request = { headers: { 'accept-language': 'sv' } };
+        const locale = resolveRequestLocale(request, {
+            supported: ['en', 'sv'],
+            fallbackLocale: 'en',
+            context: { headers: { 'x-forwarded-for': '1.2.3.4' } }
+        });
+        expect(locale).toBe('sv');
+    });
+
+    it('lets an explicitly supplied header override the request one', () => {
+        const request = { headers: { 'accept-language': 'sv' } };
+        const locale = resolveRequestLocale(request, {
+            supported: ['en', 'sv', 'de'],
+            fallbackLocale: 'en',
+            context: { headers: { 'accept-language': 'de' } }
+        });
+        expect(locale).toBe('de');
+    });
+});

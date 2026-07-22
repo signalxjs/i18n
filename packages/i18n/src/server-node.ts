@@ -8,8 +8,7 @@
  * graph that forbids it.
  *
  * ```ts
- * import { createServerT } from '@sigx/i18n/server';
- * import { loadCatalogs } from '@sigx/i18n/server/node';
+ * import { createServerT, loadCatalogs } from '@sigx/i18n/server/node';
  *
  * const t = createServerT({
  *     catalogs: await loadCatalogs('src/locales'),
