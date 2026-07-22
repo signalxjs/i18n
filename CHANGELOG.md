@@ -16,9 +16,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   catalogs** — wrong language, plus a refetch of catalogs the server had already
   sent. The seed is now remembered and re-applied to later instances, each
   getting its own copy of the tree (two stores sharing one object would let one's
-  `addMessages`/lazy load mutate the other's). Client-gated with `isLiveClient()`,
-  so a long-lived Node process can never carry one request's locale into another.
-  `resetDocumentSeed()` is exported as the test seam.
+  `addMessages`/lazy load mutate the other's). Client-gated with `isLiveClient()`
+  on both the read and the write, so a long-lived Node process can never carry
+  one request's locale into another.
 
 ### Added
 - **`persistence.transferMessages`** (default `true`). Set `false` on a resumable

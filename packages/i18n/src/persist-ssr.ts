@@ -20,6 +20,13 @@
 
 import { persist, type PersistHandle, type StorageLike } from '@sigx/store/persist';
 import { ssrState } from '@sigx/store/ssr';
+// `./internals` is a declared subpath export of @sigx/runtime-core — the
+// sanctioned cross-package seam (`@sigx/store/ssr` reads `isLiveClient` from the
+// same place, and `@sigx/cache` its blob accessors). We want exactly the guard
+// `ssrState` uses, so that our re-seed and its consume agree about what a client
+// is: `typeof window` would silently exclude windowless live clients (lynx's BG
+// thread, the terminal runtime, web workers). Our peer range pins runtime-core
+// to one minor, so the seam cannot shift under us within a release line.
 import { isLiveClient } from '@sigx/runtime-core/internals';
 import type { Patch, SetupStoreContext } from '@sigx/store';
 
@@ -58,7 +65,7 @@ export interface PersistSSROptions {
  * locale into another — belt and braces, since `hydrated` is already never true
  * on the server.
  */
-let documentSeed: { locale: string; messages: unknown } | null = null;
+let documentSeed: { locale: string; messages?: unknown } | null = null;
 
 /**
  * Internal test seam: drop the remembered document seed. Not exported from the
@@ -105,10 +112,9 @@ export function installPersistSSR<TState extends PersistSSRState>(
     // 1b) Consume-once repair, for islands and separately-upgraded boundaries.
     if (doSSR && isLiveClient()) {
         if (ssrHydrated) {
-            documentSeed = {
-                locale: slice.state.locale,
-                messages: withMessages ? cloneMessages(slice.state.messages) : undefined
-            };
+            documentSeed = withMessages
+                ? { locale: slice.state.locale, messages: cloneMessages(slice.state.messages) }
+                : { locale: slice.state.locale };
         } else if (documentSeed) {
             // Re-apply what the server sent. `persist` still runs after this, so
             // a device-local choice made since (e.g. the user switched locale in
