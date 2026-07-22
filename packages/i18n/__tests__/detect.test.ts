@@ -159,6 +159,10 @@ describe('localeCookie', () => {
         expect(cookie).not.toContain('HttpOnly'); // cookieDetector reads document.cookie
     });
 
+    it('forces Secure for SameSite=None, which browsers reject without it', () => {
+        expect(localeCookie('sv', { sameSite: 'None' })).toContain('Secure');
+    });
+
     it('honours name, lifetime and security flags', () => {
         const cookie = localeCookie('sv', { name: 'lang', maxAge: 60, secure: true, httpOnly: true });
         expect(cookie.startsWith('lang=sv')).toBe(true);

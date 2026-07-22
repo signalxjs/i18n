@@ -45,13 +45,25 @@ describe('edge cleanliness', () => {
     it('reaches the fs loader only through @sigx/i18n/server/node', async () => {
         // If any universal module imported `server-node.js`, `node:fs` would be
         // pulled back into the graph transitively and the check above would pass
-        // while the bundle still broke.
+        // while the bundle still broke. Catches all three forms — `from '…'`,
+        // the bare side-effect `import '…'`, and dynamic `import('…')`.
+        const referencesLoader = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"][^'"]*\/server-node\.js['"]/;
         const importers: string[] = [];
         for (const file of await sourceFiles(SRC)) {
             const name = file.slice(SRC.length + 1).split(/[\\/]/).join('/');
             if (name === 'server-node.ts') continue;
-            if (/from\s+['"]\.\/server-node\.js['"]/.test(await readFile(file, 'utf-8'))) importers.push(name);
+            if (referencesLoader.test(await readFile(file, 'utf-8'))) importers.push(name);
         }
         expect(importers).toEqual([]);
+    });
+
+    it('the loader-reference pattern catches side-effect and dynamic imports', () => {
+        // Guards the guard: a typo'd regexp would make the test above vacuous.
+        const referencesLoader = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"][^'"]*\/server-node\.js['"]/;
+        expect(referencesLoader.test(`import { loadCatalogs } from './server-node.js';`)).toBe(true);
+        expect(referencesLoader.test(`import './server-node.js';`)).toBe(true);
+        expect(referencesLoader.test(`const m = await import('./server-node.js');`)).toBe(true);
+        expect(referencesLoader.test(`export * from './server-node.js';`)).toBe(true);
+        expect(referencesLoader.test(`import { translate } from './translate.js';`)).toBe(false);
     });
 });
