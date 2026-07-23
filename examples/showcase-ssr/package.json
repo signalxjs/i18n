@@ -15,7 +15,7 @@
     "@sigx/runtime-core": "catalog:",
     "@sigx/runtime-dom": "catalog:",
     "@sigx/server-renderer": "catalog:",
-    "@sigx/store": "^0.9.0",
+    "@sigx/store": "^0.11.0",
     "express": "^5.2.1",
     "sigx": "catalog:"
   },

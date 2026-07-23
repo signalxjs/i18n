@@ -65,7 +65,7 @@ describe('persistence round-trip', () => {
 });
 
 describe('SSR state transfer', () => {
-    it('seeds locale + messages from the server blob (consume-once) and skips detection', async () => {
+    it('seeds locale + messages from the server blob and skips detection', async () => {
         (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
             'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo' } } } }
         };
@@ -76,12 +76,44 @@ describe('SSR state transfer', () => {
         expect(store.ssrHydrated).toBe(true);
         expect(store.locale).toBe('de'); // server seed overrides detection
         expect(store.translateKey('common', 'hi')).toBe('Hallo');
+    });
 
-        // consume-once: a second instance starts from defaults (no leftover seed)
-        const store2 = setup(base());
-        await store2.whenReady;
-        expect(store2.ssrHydrated).toBe(false);
-        expect(store2.locale).toBe('en');
+    it('seeds EVERY store instance — the island #2 case', async () => {
+        // @sigx/store 0.11.0 stopped consuming the transfer entry (store#70), so
+        // this no longer needs a repair here. It matters because every
+        // @sigx/ssr-islands island root is its own component tree, and each
+        // separately-upgraded @sigx/resume boundary can be: under the old
+        // consume-once default island #2 onward rendered the WRONG LANGUAGE and
+        // refetched catalogs the server had already serialized into the blob it
+        // had just discarded.
+        (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
+            'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo' } } } }
+        };
+
+        const first = setup(base());
+        await first.whenReady;
+        const second = setup(base());
+        await second.whenReady;
+
+        expect(second.ssrHydrated).toBe(true);
+        expect(second.locale).toBe('de');
+        expect(second.translateKey('common', 'hi')).toBe('Hallo');
+    });
+
+    it('gives each instance its own catalog tree', async () => {
+        // Store copies the seed per instance, so one instance's addMessages
+        // cannot reach another's — they are independent by design.
+        (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
+            'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo' } } } }
+        };
+
+        const first = setup(base());
+        await first.whenReady;
+        first.addMessages('de', { common: { hi: 'Servus' } });
+
+        const second = setup(base());
+        await second.whenReady;
+        expect(second.translateKey('common', 'hi')).toBe('Hallo');
     });
 });
 
