@@ -4,3 +4,18 @@ packages:
 
 onlyBuiltDependencies:
   - esbuild
+
+# Single source of truth for the SignalX core version this repo builds against.
+# `^0.12.0` == `>=0.12.0 <0.13.0` (ONE minor).
+# @sigx/reactivity keeps reactive state in module-local variables, so two physical
+# copies silently split core's singletons and break reactivity; the single-minor
+# range forces pnpm to hoist ONE copy. Bump this one block to move the whole repo
+# to a new core minor — `pnpm sync:core X.Y` does exactly that. Consumed via
+# `"catalog:"` in package.json; `pnpm pack` rewrites it to the concrete range.
+catalog:
+  "@sigx/reactivity": ^0.12.0
+  "@sigx/runtime-core": ^0.12.0
+  "@sigx/runtime-dom": ^0.12.0
+  "@sigx/server-renderer": ^0.12.0
+  "@sigx/vite": ^0.12.0
+  sigx: ^0.12.0

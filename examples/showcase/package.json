@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "@sigx/i18n": "workspace:^",
-    "sigx": "^0.12.0"
+    "sigx": "catalog:"
   },
   "devDependencies": {
-    "@sigx/vite": "^0.12.0",
+    "@sigx/vite": "catalog:",
     "typescript": "^7.0.2",
     "vite": "^8.0.3"
   }
