@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Aligned against sigx core `0.13.0`** — the catalog pins (`@sigx/reactivity`,
+  `@sigx/runtime-core`, `@sigx/runtime-dom`, `@sigx/server-renderer`,
+  `@sigx/vite`, `sigx`) move `^0.12.0` → `^0.13.0`. No source changes were
+  needed.
+- **`@sigx/store` pinned to `>=0.11.0 <0.12.0`** (dev `^0.11.0`), up from the
+  `0.9.x` line. Two published store minors land with it: 0.10.0 retargets core
+  0.13, and **0.11.0 makes `ssrState()` non-consuming** (signalxjs/store#70).
+  That last one is a behaviour change i18n has wanted: the SSR transfer entry
+  now survives seeding, so **every** i18n store instance in a document gets the
+  server's locale and catalogs, each with its own structural copy. Under
+  `@sigx/ssr-islands` every island root is its own component tree, and under
+  `@sigx/resume` each separately-upgraded boundary can be — with the old
+  consume-once default, island #2 onward rendered the *wrong language* and
+  refetched catalogs the server had already serialized into the blob it had
+  just discarded. No i18n code was required to get this; the pin is the fix, and
+  the local repair once planned for it is no longer needed (#15).
+
 ### Changed / removed
 - **Removed the "target" axis.** The model is now `messages[locale][namespace]`.
   Lazy namespace loading already gives the per-surface payload split targets were

@@ -58,7 +58,7 @@
     "peerDependencies": {
         "@sigx/reactivity": "catalog:",
         "@sigx/runtime-core": "catalog:",
-        "@sigx/store": ">=0.9.0 <0.10.0",
+        "@sigx/store": ">=0.11.0 <0.12.0",
         "@sigx/vite": "catalog:",
         "sigx": "catalog:",
         "vite": "^8.0.0"
@@ -77,7 +77,7 @@
     "devDependencies": {
         "@sigx/reactivity": "catalog:",
         "@sigx/runtime-core": "catalog:",
-        "@sigx/store": "^0.9.0",
+        "@sigx/store": "^0.11.0",
         "@sigx/vite": "catalog:",
         "@types/node": "^26.1.1",
         "sigx": "catalog:",
