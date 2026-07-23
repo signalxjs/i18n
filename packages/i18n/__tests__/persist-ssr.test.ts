@@ -115,6 +115,22 @@ describe('SSR state transfer', () => {
         await second.whenReady;
         expect(second.translateKey('common', 'hi')).toBe('Hallo');
     });
+
+    it('transferMessages:false takes the locale only (the resumable page)', async () => {
+        // A resumable page ships no component JS on load, so catalogs in the
+        // blob would be bytes nothing reads — the server already rendered every
+        // string into the HTML. Only the locale needs to cross.
+        (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
+            'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo' } } } }
+        };
+
+        const store = setup(base({ persistence: { transferMessages: false, persist: false }, load: undefined }));
+        await store.whenReady;
+
+        expect(store.ssrHydrated).toBe(true);
+        expect(store.locale).toBe('de');                     // locale still transfers
+        expect(store.translateKey('common', 'hi')).toBe('hi'); // catalogs did not
+    });
 });
 
 describe('SSR seed marks catalogs loaded (no client refetch)', () => {

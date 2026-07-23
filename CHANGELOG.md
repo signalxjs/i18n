@@ -37,6 +37,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same ground, are renderer-agnostic, and are the recommended bindings.
 
 ### Added
+- **`persistence.transferMessages` option** (default `true`). Set `false` on a
+  **resumable** page: it ships no component JS on load, so the catalogs in the
+  SSR transfer blob are bytes nothing reads — the server already rendered every
+  string into the HTML. The locale still transfers, so a boundary that later
+  upgrades knows its language and lazy-loads only the namespaces it actually
+  needs. Reached through `createI18n({ persistence: { transferMessages: false } })`.
 - **`initialMessages` config (SSR preload seed):** `messages[locale][namespace]`
   catalogs seeded synchronously at store creation and marked loaded. The idiomatic
   SSR pattern: the server preloads a request's catalogs and passes them here, so
