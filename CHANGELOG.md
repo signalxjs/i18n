@@ -67,6 +67,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     gate + locale HMR.
 
 ### Dependencies
-- Peer dependencies target the **0.12** SignalX runtime: `@sigx/reactivity`,
-  `@sigx/runtime-core`, `@sigx/vite`, and `sigx` at `>=0.12.0 <0.13.0`;
-  `@sigx/store` at `>=0.9.0 <0.10.0`.
+- Peer dependencies target the **0.13** SignalX runtime: `@sigx/reactivity`,
+  `@sigx/runtime-core`, `@sigx/vite`, and `sigx` at `>=0.13.0 <0.14.0`;
+  `@sigx/store` at `>=0.11.0 <0.12.0`.

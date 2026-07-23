@@ -6,7 +6,10 @@ onlyBuiltDependencies:
   - esbuild
 
 # Single source of truth for the SignalX core version this repo builds against.
-# `^0.12.0` == `>=0.12.0 <0.13.0` (ONE minor).
+# Every pin below is a single-minor caret range — `^X.Y.0` == `>=X.Y.0 <X.(Y+1).0`.
+# (Stated without a concrete version on purpose: `pnpm sync:core` rewrites the
+# values under `catalog:`, not this comment, so naming one here goes stale on
+# the next bump — as it did across 0.12 → 0.13.)
 # @sigx/reactivity keeps reactive state in module-local variables, so two physical
 # copies silently split core's singletons and break reactivity; the single-minor
 # range forces pnpm to hoist ONE copy. Bump this one block to move the whole repo
