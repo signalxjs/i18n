@@ -49,6 +49,51 @@ function readJson(path) {
     return JSON.parse(readFileSync(path, 'utf-8'));
 }
 
+/**
+ * The `catalog:` entries from pnpm-workspace.yaml, as `{ name: range }`.
+ *
+ * Core deps are declared `"catalog:"` in the source manifests so they stay pinned
+ * to one minor in one place. `pnpm pack` resolves those to the concrete range in
+ * the PUBLISHED manifest, so the tarball is fine — but this script builds its
+ * scratch app from the SOURCE manifest and installs it with `npm`, which has no
+ * idea what `catalog:` means:
+ *
+ *   npm error code EUNSUPPORTEDPROTOCOL
+ *   npm error Unsupported URL Type "catalog:": catalog:
+ *
+ * So resolve it the same way pnpm would. Parsed leniently — the entries are
+ * simple `name: ^x.y.z` lines, quoted or bare.
+ */
+function readCatalog() {
+    const text = readFileSync(join(rootDir, 'pnpm-workspace.yaml'), 'utf-8');
+    const entry = /^\s+(["']?)([@a-zA-Z0-9._/-]+)\1\s*:\s*(?:"([^"]*)"|'([^']*)'|([^\s#]+))/;
+    const catalog = {};
+    let inCatalog = false;
+    for (const line of text.split('\n')) {
+        if (/^(catalog|catalogs)\s*:/.test(line)) {
+            inCatalog = true;
+            continue;
+        }
+        if (inCatalog && line.trim() !== '' && /^\S/.test(line)) inCatalog = false;
+        if (!inCatalog) continue;
+        const m = entry.exec(line);
+        if (m) catalog[m[2]] = m[3] ?? m[4] ?? m[5];
+    }
+    return catalog;
+}
+
+/** Resolve a possibly-`catalog:` specifier to a concrete range npm understands. */
+function resolveSpec(name, spec, catalog) {
+    if (spec !== 'catalog:') return spec;
+    const range = catalog[name];
+    if (!range) {
+        throw new Error(
+            `verify-pack: "${name}" is declared "catalog:" but has no entry in pnpm-workspace.yaml's catalog block.`,
+        );
+    }
+    return range;
+}
+
 function packPackage(pkgPath) {
     const pkgFullPath = join(rootDir, pkgPath);
     const pkgJson = readJson(join(pkgFullPath, 'package.json'));
@@ -83,8 +128,9 @@ function main() {
     // @sigx/i18n declares the sigx runtime tier + @sigx/store as (non-optional)
     // peers — satisfy them from npm so the import smoke can resolve.
     const peers = readJson(join(rootDir, 'packages/i18n/package.json')).peerDependencies;
+    const catalog = readCatalog();
     for (const peer of ['@sigx/reactivity', '@sigx/runtime-core', '@sigx/store', 'sigx']) {
-        deps[peer] = peers[peer];
+        deps[peer] = resolveSpec(peer, peers[peer], catalog);
     }
     const appPkg = {
         name: 'sigx-i18n-pack-smoke',
