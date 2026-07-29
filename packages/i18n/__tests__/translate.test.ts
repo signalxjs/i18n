@@ -1,6 +1,6 @@
 /** Tests for @sigx/i18n pure translation core (master fallback). */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { translate, getMessage, localeChain } from '../src/translate.js';
+import { translate, lookup, getMessage, localeChain } from '../src/translate.js';
 import { lightweightFormatter } from '../src/formatter.js';
 import type { MessageTree, TranslateConfig } from '../src/types.js';
 
@@ -82,6 +82,34 @@ describe('translate — hierarchical namespaces', () => {
     };
     it('resolves a key under a nested namespace path', () => {
         expect(translate(tree, 'title', undefined, { locale: 'en', namespace: 'admin/users' }, cfg())).toBe('Users');
+    });
+});
+
+describe('lookup', () => {
+    const tree: MessageTree = {
+        en: { cart: { title: 'Cart', items: { one: '# item', other: '# items' } } },
+        sv: { cart: { title: 'Kundvagn' } }
+    };
+
+    it('reports the locale the message was found in, not the requested one', () => {
+        expect(lookup(tree, 'title', { locale: 'sv', namespace: 'cart' }, cfg())).toEqual({
+            message: 'Kundvagn',
+            locale: 'sv'
+        });
+        // `items` is untranslated in sv → found via the master fallback.
+        expect(lookup(tree, 'items', { locale: 'sv', namespace: 'cart' }, cfg())?.locale).toBe('en');
+    });
+
+    it('returns undefined for a miss without invoking onMissing or warning', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const onMissing = vi.fn(() => 'X');
+        expect(lookup(tree, 'nope', { locale: 'en', namespace: 'cart' }, cfg({ onMissing }))).toBeUndefined();
+        expect(onMissing).not.toHaveBeenCalled();
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('returns undefined for an unknown namespace', () => {
+        expect(lookup(tree, 'title', { locale: 'en', namespace: 'nope' }, cfg())).toBeUndefined();
     });
 });
 

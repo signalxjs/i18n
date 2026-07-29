@@ -37,7 +37,50 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `setLocale`). The `<T>` component (in the core entry) and the accessor cover the
   same ground, are renderer-agnostic, and are the recommended bindings.
 
+### Fixed
+- **`checkCatalogs`/`buildManifest` no longer skip a namespace absent from the
+  master locale** (#33). Both were driven by master entries, so `sv/legal.json`
+  with no `en/legal.json` passed the gate silently — while still landing in
+  `manifest.namespaces`, which made it a `KnownNamespace` whose
+  `KeysForNamespace` was `never` (every key on it a compile error, with no
+  diagnostic pointing at the missing master file). The check now takes its
+  namespace universe from *all* entries and reports the gap as a new
+  `missing-master` problem kind (an error under `strict: 'error'`, a warning
+  under `'warn'`, suppressed by `ignoreLocales`), and `buildManifest` derives
+  `namespaces` from the master-derived `messages` so the two cannot disagree.
+
 ### Added
+- **Runtime-sourced catalogs** (#31) — support for the class of app whose
+  user-facing content is authored outside the codebase (a CMS, a form builder,
+  an admin-editable notification template), where the strings *and their keys*
+  live in a database and change without a deploy. Four pieces, each usable alone:
+  - **`runtimeNamespaces`** (`@sigx/i18n/vite`, and `--runtime-namespaces` on the
+    CLI) — declares a namespace as having no build-time catalog. It is exempt
+    from the completeness gate and typed with open `string` keys, while the
+    static namespaces around it keep the full gate and the literal key union. It
+    lands in the generated `Schema` as its own `runtimeNamespaces` union, so
+    "typed namespace, open keys" is now deliberate rather than the accidental
+    `never` shape fixed above.
+  - **`useDynamicTranslation(ns)`** — the sanctioned untyped lookup, replacing
+    reaching into `store.translateKey`. Returns a plain callable with a
+    per-call `{ default }` (the author's original text, so a missing translation
+    never renders a raw `block.a1b2c3.label`) and an `exists(key)` probe that
+    fires neither `onMissing` nor a dev warning. Deliberately *not* a member of
+    the `t` proxy: every property of `t` is a message key, so a reserved
+    `t.exists` would be a hole in the key space — and, post-codegen, a type lie.
+    `<T>` gains a matching `default` prop.
+  - **`store.invalidate(locale?, ns?)`** — drop cached catalogs and refetch the
+    active ones, so a client picks up a publish without a page reload.
+    Stale-while-revalidate (the old catalog renders until the refetch lands), and
+    a per-pair generation guard means a superseded in-flight request can no
+    longer land its stale result and undo the invalidation.
+  - **Surfaced load failures** — `config.onLoadError`, plus reactive
+    `error` / `retry()` on `useLocale()` (`store.loadError` / `store.retry`).
+    Previously `loadOne` swallowed the rejection, so a network-backed loader
+    could not drive a "translations unavailable / retry" affordance.
+- **`lookup()`** (`@sigx/i18n`) — the locale-chain resolution step split out of
+  `translate`, returning the raw message and the locale it was *found* in.
+  Powers `store.hasKey` / `exists` without formatting or missing-key handling.
 - **The server translator is now universal.** `@sigx/i18n/server` takes catalogs
   as data (`createServerT({ catalogs, … })`) and has **no `node:` imports**, so it
   runs unchanged on workerd, Deno, Bun and inside the bundled server builds the

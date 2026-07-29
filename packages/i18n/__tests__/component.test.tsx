@@ -88,4 +88,31 @@ describe('<T> component', () => {
         await tick();
         expect(container.textContent).toContain('Users');
     });
+
+    it('renders the default prop for a runtime key with no translation', async () => {
+        // The component-form escape hatch: the key comes from a CMS block, and the
+        // author's original text is the fallback — not a raw `block.a1b2.label`.
+        const Root = component(() => () => (
+            <div>
+                <T ns="content" k="block.a1b2.label" default="Your full name" />
+                {' | '}
+                <T ns="content" k="block.zz.title" default="Ignored" />
+            </div>
+        ));
+        const app = defineApp((<Root />) as never);
+        app.use(createI18n(opts));
+        const store = app.runWithContext(() => useI18n());
+        store.addMessages('en', 'content', { 'block.zz.title': 'Translated' });
+
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        app.mount(container);
+        await tick();
+
+        expect(container.textContent).toContain('Your full name');
+        expect(container.textContent).not.toContain('block.a1b2.label');
+        // A real translation still wins over the default.
+        expect(container.textContent).toContain('Translated');
+        expect(container.textContent).not.toContain('Ignored');
+    });
 });

@@ -15,7 +15,7 @@
  */
 
 import type { Params, Schema } from './types.js';
-import { useI18n, type I18nStore } from './store.js';
+import { useI18n, type I18nLoadError, type I18nStore, type TranslateOptions } from './store.js';
 
 // ── Typed surface (populated by the @sigx/i18n/vite generated Schema) ─────────
 // When the Vite plugin has generated types, `Schema` carries the real
@@ -29,11 +29,21 @@ export type KnownLocale = Schema extends { locales: infer L } ? L & string : str
 /** Known namespaces union (or `string` without codegen). */
 export type KnownNamespace = Schema extends { namespaces: infer N } ? N & string : string;
 
+/**
+ * Namespaces the plugin was told are sourced at runtime (`runtimeNamespaces`).
+ * They are real namespaces with no build-time catalog, so the namespace narrows
+ * but the keys stay open. `never` without codegen, and for a `.d.ts` generated
+ * before the option existed.
+ */
+type RuntimeNamespace = Schema extends { runtimeNamespaces: infer R } ? R & string : never;
+
 /** Dotted keys available in a namespace, or `string` without codegen. */
 export type KeysForNamespace<NS extends string> = SchemaMessages extends Record<string, unknown>
-    ? NS extends keyof SchemaMessages
-        ? Extract<keyof SchemaMessages[NS], string>
-        : never
+    ? NS extends RuntimeNamespace
+        ? string
+        : NS extends keyof SchemaMessages
+          ? Extract<keyof SchemaMessages[NS], string>
+          : never
     : string;
 
 /** A nested accessor node: callable for params, indexable for deeper keys. */
@@ -77,14 +87,19 @@ type Nested<F> = {
 /**
  * A translator typed from the generated Schema: the nested accessor
  * (`t.cart.revenue({ amount })`) is fully typed per key, and the string-key form
- * (`t('cart.revenue', …)`) validates the key. Without codegen this degrades to
- * the permissive `Translator`.
+ * (`t('cart.revenue', …)`) validates the key. Without codegen — or for a
+ * `runtimeNamespaces` namespace, whose catalog does not exist at build time —
+ * this degrades to the permissive `Translator`.
  */
 export type TypedTranslator<NS extends string> = SchemaMessages extends Record<string, unknown>
-    ? Nested<NamespaceKeyParams<NS>> & { (key: KeysForNamespace<NS>, params?: Params): string }
+    ? // Non-distributive, so a union NS doesn't split the return type.
+      [NS] extends [RuntimeNamespace]
+        ? Translator
+        : Nested<NamespaceKeyParams<NS>> & { (key: KeysForNamespace<NS>, params?: Params): string }
     : Translator;
 
 type TranslateFn = Pick<I18nStore, 'translateKey'>;
+type DynamicFn = Pick<I18nStore, 'translateKey' | 'hasKey'>;
 
 /**
  * Build a translator bound to a store + namespace.
@@ -145,14 +160,73 @@ export function useTranslation<NS extends KnownNamespace = KnownNamespace>(
     return createTranslator(store, ns) as unknown as TypedTranslator<NS>;
 }
 
+// ── The dynamic (untyped-key) surface ────────────────────────────────────────
+// Deliberately NOT a member of the `t` proxy. Every property of `t` is a message
+// key, so a reserved `t.exists` would be a hole in the key space — and, once
+// codegen has run, a type lie: a catalog with a key named `exists` would be
+// typed as a translation leaf while the runtime handed back a boolean probe.
+// A plain function object has no such conflict.
+
+/**
+ * Lookup for keys that don't exist at build time — CMS blocks, user-defined form
+ * labels, admin-authored notification copy. The key is an open `string`, and
+ * `default` supplies the author's original text so a missing translation renders
+ * as real copy rather than a raw `block.a1b2c3.label`.
+ */
+export interface DynamicTranslator {
+    (key: string, params?: Params, options?: TranslateOptions): string;
+    /** Does this key resolve in the current locale chain? No warning, no `onMissing`. */
+    exists(key: string): boolean;
+}
+
+/**
+ * Build a dynamic translator bound to a store + namespace.
+ * Exposed for advanced use / SSR; components normally use `useDynamicTranslation`.
+ */
+export function createDynamicTranslator(store: DynamicFn, namespace: string): DynamicTranslator {
+    const t = (key: string, params?: Params, options?: TranslateOptions): string =>
+        store.translateKey(namespace, key, params, options);
+    t.exists = (key: string): boolean => store.hasKey(namespace, key);
+    return t;
+}
+
+/**
+ * Resolve the i18n store and return a {@link DynamicTranslator} for `namespace`.
+ * The namespace is still checked against the generated Schema; only the keys are
+ * open. Use it for runtime-sourced messages; `useTranslation` stays the typed
+ * path for the app's own chrome.
+ *
+ * ```ts
+ * const content = useDynamicTranslation('content');
+ * content(block.labelKey, { count }, { default: block.label });
+ * if (content.exists(block.helpKey)) …
+ * ```
+ */
+export function useDynamicTranslation<NS extends KnownNamespace = KnownNamespace>(
+    namespace?: NS
+): DynamicTranslator {
+    const store = useI18n();
+    const ns = namespace ?? store.defaultNamespace;
+    void store.ensureNamespace(ns); // loads the namespace on first use
+    return createDynamicTranslator(store, ns);
+}
+
 /** Reactive locale controls, resolved from the i18n store. */
 export interface LocaleControls {
     /** The active locale (reactive). */
     readonly locale: KnownLocale;
     /** True while a locale/namespace load is in flight (reactive). */
     readonly loading: boolean;
+    /**
+     * The most recent catalog-load failure, or `null` (reactive). Pair with
+     * `retry` to drive a "translations unavailable" affordance — a bundled
+     * `import()` failing is a broken build, but a `fetch` failing is Tuesday.
+     */
+    readonly error: I18nLoadError | null;
     /** Switch locale (typed to the known locales with codegen). */
     setLocale: (locale: KnownLocale) => Promise<void>;
+    /** Retry every catalog load that failed. */
+    retry: () => Promise<void>;
     /** Resolves when the initial catalogs + device hydration have settled. */
     whenReady: Promise<void>;
 }
@@ -167,7 +241,11 @@ export function useLocale(): LocaleControls {
         get loading() {
             return store.loading;
         },
+        get error() {
+            return store.loadError;
+        },
         setLocale: store.setLocale,
+        retry: store.retry,
         whenReady: store.whenReady
     };
 }
