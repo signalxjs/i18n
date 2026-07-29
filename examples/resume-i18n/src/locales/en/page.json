@@ -1,0 +1,16 @@
+{
+  "title": "Localized resumability",
+  "intro": "This page is server-rendered in one language and ships no component JavaScript. Open the network panel: nothing loads until you interact.",
+  "switchHeading": "1 — Locale switch with zero JavaScript",
+  "switchHint": "These are plain links. The server negotiates the locale, re-renders the whole document, and sets a cookie so the choice sticks. Nothing hydrates; every boundary on the page is correct, including the ones that never load their chunk.",
+  "currentLocale": "Current locale: {locale}",
+  "staticHeading": "2 — Translated copy costs nothing",
+  "staticHint": "This paragraph has no event handlers, so the transform makes no boundary out of it. Its translation was resolved on the server and is plain HTML forever.",
+  "staticBody": "Ada has {credits, number} credits, updated {updated, date}.",
+  "counterHeading": "3 — A translated QRL boundary that upgrades",
+  "counterHint": "The click handler captures only the named signal, so it extracts into a tiny QRL chunk. The label is a plural of the LIVE count, so on the first write this boundary upgrades and re-translates in the browser — which is why src/i18n.ts calls provideI18nConfig().",
+  "serverFnHeading": "4 — A localized server function",
+  "serverFnHint": "The handler translates with createRequestT over a server-only namespace. That catalog is never in the client graph, and the response is in this request's language.",
+  "askServer": "ask the server",
+  "footer": "Rendered on the server. The only script on this page is the resume loader."
+}

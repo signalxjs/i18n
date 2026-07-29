@@ -1,0 +1,16 @@
+{
+  "title": "Lokaliserad återupptagbarhet",
+  "intro": "Den här sidan renderas på servern på ett språk och skickar ingen komponent-JavaScript. Öppna nätverkspanelen: ingenting laddas förrän du interagerar.",
+  "switchHeading": "1 — Språkbyte helt utan JavaScript",
+  "switchHint": "Det här är vanliga länkar. Servern förhandlar språket, renderar om hela dokumentet och sätter en cookie så att valet består. Ingenting hydreras; varje gräns på sidan blir rätt, även de som aldrig laddar sin chunk.",
+  "currentLocale": "Aktuellt språk: {locale}",
+  "staticHeading": "2 — Översatt text kostar ingenting",
+  "staticHint": "Det här stycket har inga händelsehanterare, så transformen gör ingen gräns av det. Översättningen löstes på servern och förblir vanlig HTML.",
+  "staticBody": "Ada har {credits, number} krediter, uppdaterat {updated, date}.",
+  "counterHeading": "3 — En översatt QRL-gräns som uppgraderas",
+  "counterHint": "Klickhanteraren fångar bara den namngivna signalen och extraheras därför till en liten QRL-chunk. Etiketten är en pluralform av den LEVANDE räknaren, så vid första skrivningen uppgraderas gränsen och översätts om i webbläsaren — därför anropar src/i18n.ts provideI18nConfig().",
+  "serverFnHeading": "4 — En lokaliserad serverfunktion",
+  "serverFnHint": "Hanteraren översätter med createRequestT över en namnrymd som bara finns på servern. Den katalogen finns aldrig i klientgrafen, och svaret är på det här anropets språk.",
+  "askServer": "fråga servern",
+  "footer": "Renderad på servern. Sidans enda skript är resume-laddaren."
+}
