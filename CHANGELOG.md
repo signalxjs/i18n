@@ -6,7 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-29
+
 ### Changed / removed
+- **Aligned against sigx core `0.14.0`** — the catalog pins move `^0.13.0` →
+  `^0.14.0`, and `@sigx/store` to `>=0.12.0 <0.13.0` (dev `^0.12.0`). No source
+  changes were needed. Verified beyond the unit suite (128 tests) by driving
+  `examples/showcase-ssr` in a browser against core 0.14: both locales render
+  correctly on the server — including ICU plurals, locale number and date
+  formatting, and fallback to English for an English-only key — the `store:i18n`
+  entry still reaches `window.__SIGX_ASYNC__`, hydration is clean with no
+  mismatch warnings, and the in-page language switcher re-renders reactively
+  without a navigation. That last check matters on this release: core 0.14 makes
+  a reactive object's key set a dependency (signalxjs/core#521), and a message
+  catalogue is exactly the kind of enumerated reactive object that change
+  affects.
 - **Aligned against sigx core `0.13.0`** — the catalog pins (`@sigx/reactivity`,
   `@sigx/runtime-core`, `@sigx/runtime-dom`, `@sigx/server-renderer`,
   `@sigx/vite`, `sigx`) move `^0.12.0` → `^0.13.0`. No source changes were
