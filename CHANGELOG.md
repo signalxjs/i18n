@@ -19,7 +19,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mismatch warnings, and the in-page language switcher re-renders reactively
   without a navigation. That last check matters on this release: core 0.14 makes
   a reactive object's key set a dependency (signalxjs/core#521), and a message
-  catalogue is exactly the kind of enumerated reactive object that affects.
+  catalogue is exactly the kind of enumerated reactive object that change
+  affects.
 - **Aligned against sigx core `0.13.0`** — the catalog pins (`@sigx/reactivity`,
   `@sigx/runtime-core`, `@sigx/runtime-dom`, `@sigx/server-renderer`,
   `@sigx/vite`, `sigx`) move `^0.12.0` → `^0.13.0`. No source changes were
