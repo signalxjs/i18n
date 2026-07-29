@@ -57,6 +57,15 @@ rt('anything.at.all', { count: 2 });
 // @ts-expect-error a runtime namespace must not loosen the static ones
 t('does.not.exist.either');
 
+// …and neither may it loosen the NO-ARGUMENT form, whose NS defaults to the
+// whole KnownNamespace union. If `KeysForNamespace` distributed over that union,
+// the runtime member would contribute `string` and absorb it, switching off key
+// checking project-wide the moment one namespace is declared runtime-sourced.
+const dflt = useTranslation();
+dflt('title'); // a statically-known key still resolves
+// @ts-expect-error the no-arg form must still reject an unknown key
+dflt('totally.made.up.key');
+
 // ── The untyped escape hatch, for a dynamic key in a TYPED namespace ─────────
 const dyn = useDynamicTranslation('cart');
 dyn(runtimeKey);

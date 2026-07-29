@@ -37,9 +37,19 @@ export type KnownNamespace = Schema extends { namespaces: infer N } ? N & string
  */
 type RuntimeNamespace = Schema extends { runtimeNamespaces: infer R } ? R & string : never;
 
-/** Dotted keys available in a namespace, or `string` without codegen. */
+/**
+ * Dotted keys available in a namespace, or `string` without codegen.
+ *
+ * The runtime-namespace test is non-distributive (`[NS] extends [R]`) on
+ * purpose. `useTranslation()` with no argument defaults `NS` to the whole
+ * `KnownNamespace` union, and a distributive test would hand back `string` for
+ * the runtime members — which then absorbs the whole union, silently switching
+ * off key checking at every no-arg call site the moment *any* namespace is
+ * declared runtime-sourced. Only a namespace that is exactly a runtime one gets
+ * open keys; a union keeps the statically-known members' keys.
+ */
 export type KeysForNamespace<NS extends string> = SchemaMessages extends Record<string, unknown>
-    ? NS extends RuntimeNamespace
+    ? [NS] extends [RuntimeNamespace]
         ? string
         : NS extends keyof SchemaMessages
           ? Extract<keyof SchemaMessages[NS], string>
