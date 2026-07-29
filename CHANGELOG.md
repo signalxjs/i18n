@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
+### Changed / removed
 - **Aligned against sigx core `0.13.0`** — the catalog pins (`@sigx/reactivity`,
   `@sigx/runtime-core`, `@sigx/runtime-dom`, `@sigx/server-renderer`,
   `@sigx/vite`, `sigx`) move `^0.12.0` → `^0.13.0`. No source changes were
@@ -23,8 +23,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refetched catalogs the server had already serialized into the blob it had
   just discarded. No i18n code was required to get this; the pin is the fix, and
   the local repair once planned for it is no longer needed (#15).
-
-### Changed / removed
 - **Removed the "target" axis.** The model is now `messages[locale][namespace]`.
   Lazy namespace loading already gives the per-surface payload split targets were
   for (a namespace loads only when first used). Use **hierarchical namespace
