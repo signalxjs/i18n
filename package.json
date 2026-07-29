@@ -32,11 +32,11 @@
   },
   "devDependencies": {
     "@size-limit/preset-small-lib": "^11",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "@vitest/coverage-v8": "^4.1.5",
     "happy-dom": "^20.11.1",
-    "oxlint": "^1.75.0",
+    "oxlint": "^1.76.0",
     "size-limit": "^11",
     "typescript": "^7.0.2",
     "vite": "^8.0.3",
