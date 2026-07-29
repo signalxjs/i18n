@@ -114,7 +114,19 @@ void serverPresent;
 // @ts-expect-error unknown namespace is a compile error for the dynamic form too
 sv.dynamic('no-such-namespace');
 
-// The unbound one-off call is open-keyed by design (no namespace bound).
-server.t(runtimeKey, { name: 'Sam' }, { locale: 'sv', namespace: 'cart', default: 'Author text' });
+// The unbound one-off call is open-keyed by design (no namespace bound) — but the
+// NAMESPACE is still checked, the same rule the dynamic form follows. Only the
+// locale stays open, because a server locale is negotiated from a request.
+declare const negotiated: string;
+server.t(runtimeKey, { name: 'Sam' }, { locale: negotiated, namespace: 'cart', default: 'Author text' });
 const serverExists: boolean = server.exists(runtimeKey, { locale: 'sv', namespace: 'cart' });
 void serverExists;
+
+// @ts-expect-error an unknown namespace in the options bag is a compile error
+server.t(runtimeKey, undefined, { namespace: 'no-such-namespace' });
+// @ts-expect-error …on the unbound existence probe too
+server.exists(runtimeKey, { namespace: 'no-such-namespace' });
+// @ts-expect-error …and on the locale-bound one
+sv.exists(runtimeKey, { namespace: 'no-such-namespace' });
+// @ts-expect-error …and on the locale-bound t
+sv.t(runtimeKey, undefined, { namespace: 'no-such-namespace' });

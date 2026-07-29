@@ -67,8 +67,14 @@ export interface ServerI18nOptions {
  * server has to carry because it has no ambient locale state.
  */
 export interface ServerTranslateOptions extends TranslateOptions {
+    /**
+     * Deliberately `string`, not `KnownLocale`: a server locale is negotiated
+     * from a request at runtime (`resolveRequestLocale` returns `string`), so
+     * narrowing it would force a cast on the normal path. The *namespace* below
+     * comes from source code, so it is checked.
+     */
     locale?: string;
-    namespace?: string;
+    namespace?: KnownNamespace;
 }
 
 /**
@@ -87,7 +93,7 @@ export interface LocaleTranslator {
     /** Open-key call. Keys are `string` because no namespace is statically bound. */
     t(key: string, params?: Params, options?: Omit<ServerTranslateOptions, 'locale'>): string;
     /** Does the key resolve? No `onMissing`, no dev warning. */
-    exists(key: string, options?: { namespace?: string }): boolean;
+    exists(key: string, options?: { namespace?: KnownNamespace }): boolean;
     /** Bind a namespace → the typed proxy (`m.subject()`, `m('subject')`, `` `${m.subject}` ``). */
     forNamespace<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): TypedTranslator<NS>;
     /** Bind a namespace → open keys, with a call-site `default` and `exists`. */
@@ -100,7 +106,7 @@ export interface ServerTranslator {
     /** One-off call. `options.locale` defaults to the master locale. */
     t(key: string, params?: Params, options?: ServerTranslateOptions): string;
     /** One-off existence probe. */
-    exists(key: string, options?: { locale?: string; namespace?: string }): boolean;
+    exists(key: string, options?: { locale?: string; namespace?: KnownNamespace }): boolean;
     /** Bind a locale. Everything else hangs off the result. */
     forLocale(locale: string): LocaleTranslator;
 }
