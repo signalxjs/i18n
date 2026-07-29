@@ -323,6 +323,56 @@ describe('store — surfaced load failures', () => {
         stop.stop();
     });
 
+    // A failed pair is in neither `loaded` nor `inflight`, so an invalidate that
+    // only walked those two would silently skip it — leaving a transient failure
+    // unrecoverable without an explicit retry().
+    it('invalidate also refetches a pair whose last load failed', async () => {
+        const load = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ title: 'Recovered' });
+        const { store } = setup({ fallbackLocale: 'en', load, onLoadError: vi.fn() });
+
+        await store.ensureNamespace('content');
+        await flush();
+        expect(store.loadError).not.toBeNull();
+
+        await store.invalidate('en', 'content');
+        expect(store.translateKey('content', 'title')).toBe('Recovered');
+        expect(store.loadError).toBeNull();
+    });
+
+    // Failures are tracked per pair, so a recovery landing out of order cannot
+    // leave `loadError` pointing at a pair that has since succeeded.
+    it('keeps loadError on the still-failing pair when another recovers', async () => {
+        const failA = new Error('A offline');
+        const failB = new Error('B offline');
+        const load = vi.fn(async (_l: string, ns: string) => {
+            if (ns === 'a') throw failA;
+            if (ns === 'b') throw failB;
+            return {};
+        });
+        const { store } = setup({ fallbackLocale: 'en', load, onLoadError: vi.fn() });
+
+        await store.ensureNamespace('a');
+        await flush();
+        await store.ensureNamespace('b');
+        await flush();
+        expect(store.loadError?.error).toBe(failB); // newest failure
+
+        // Recover ONLY b, leaving a untouched and still broken — the case a
+        // single "last error" gets wrong, since it has no reason to re-stamp a.
+        load.mockImplementation(async () => ({ title: 'B ok' }));
+        await store.invalidate('en', 'b');
+        await flush();
+
+        expect(store.translateKey('b', 'title')).toBe('B ok');
+        expect(store.loadError?.error).toBe(failA); // NOT the recovered b
+        expect(store.loadError?.namespace).toBe('a');
+
+        // And once a recovers too, the error clears.
+        await store.invalidate('en', 'a');
+        await flush();
+        expect(store.loadError).toBeNull();
+    });
+
     it('keeps a failed pair unloaded so retry actually refetches', async () => {
         const load = vi.fn().mockRejectedValue(new Error('offline'));
         const { store } = setup({ fallbackLocale: 'en', load, onLoadError: vi.fn() });

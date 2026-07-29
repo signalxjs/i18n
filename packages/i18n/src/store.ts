@@ -127,18 +127,25 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     // request would merge a stale catalog and re-mark the pair loaded, silently
     // undoing the invalidation.
     const keyGen = new Map<string, number>();
-    // Pairs whose last load rejected. Not in `loaded`, so `retry` refetches them.
-    const failed = new Set<string>();
-
-    // The most recent load failure. The raw error is held OUTSIDE the reactive
-    // graph — a rejection value can be any exotic object (a DOMException, a class
-    // with getters) and has no business being deep-proxied — with a plain version
-    // counter as the reactive trigger.
+    // Pairs whose last load rejected, keyed (locale,ns), in failure order — the
+    // newest entry is what `loadError` surfaces. Tracked per pair rather than as
+    // one "last error" so that recoveries landing out of order can't leave
+    // `loadError` pointing at a pair that has since succeeded. None of them are
+    // in `loaded`, so `retry` and `invalidate` refetch them.
+    //
+    // The raw rejection values live here, OUTSIDE the reactive graph — a
+    // rejection can be any exotic object (a DOMException, a class with getters)
+    // and has no business being deep-proxied — with a plain version counter as
+    // the reactive trigger.
+    const failures = new Map<string, I18nLoadError>();
     const errorVersion = signal(0);
-    let lastError: I18nLoadError | null = null;
-    function setLoadError(next: I18nLoadError | null): void {
-        lastError = next;
+    function noteFailure(key: string, info: I18nLoadError): void {
+        failures.delete(key); // re-insert so the newest failure sorts last
+        failures.set(key, info);
         errorVersion.value++;
+    }
+    function clearFailure(key: string): void {
+        if (failures.delete(key)) errorVersion.value++;
     }
 
     function mergeCatalog(locale: string, ns: string, catalog: Catalog): void {
@@ -179,15 +186,13 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
                         ? (mod as { default: Catalog }).default
                         : (mod as Catalog);
                 mergeCatalog(locale, ns, catalog);
-                // Recovered: clear the surfaced error once nothing is still failing.
-                if (failed.delete(key) && failed.size === 0) setLoadError(null);
+                clearFailure(key); // recovered
             })
             .catch(err => {
                 if (!current()) return;
                 // A failed catalog load must never crash the app; fall back through
                 // the resolution chain and allow a later retry (not marked loaded).
-                failed.add(key);
-                setLoadError({ error: err, locale, namespace: ns });
+                noteFailure(key, { error: err, locale, namespace: ns });
                 if (config.onLoadError) {
                     config.onLoadError(err, { locale, namespace: ns });
                 } else if (__DEV__) {
@@ -252,7 +257,10 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
          */
         async invalidate(locale?: string, ns?: string): Promise<void> {
             if (!config.load) return;
-            const stale = [...new Set([...loaded, ...inflight.keys()])]
+            // `failures` is in the candidate set too: a pair whose last load
+            // rejected is in neither `loaded` nor `inflight`, and leaving it out
+            // would make a transient failure unrecoverable by `invalidate` alone.
+            const stale = [...new Set([...loaded, ...inflight.keys(), ...failures.keys()])]
                 .map(parseKey)
                 .filter(([l, n]) => (locale === undefined || l === locale) && (ns === undefined || n === ns));
 
@@ -268,7 +276,7 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         },
         /** Retry every catalog load that failed. Drives a "translations unavailable" affordance. */
         async retry(): Promise<void> {
-            const pairs = [...failed].map(parseKey);
+            const pairs = [...failures.keys()].map(parseKey);
             await Promise.all(pairs.map(([l, n]) => loadOne(l, n)));
         }
     });
@@ -345,10 +353,12 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
             actions.retry.pending
     );
 
-    /** The most recent catalog-load failure, or `null`. Reactive. */
+    /** The newest STILL-FAILING catalog load, or `null`. Reactive. */
     const loadError = computed<I18nLoadError | null>(() => {
-        void errorVersion.value; // the reactive trigger; `lastError` is held raw
-        return lastError;
+        void errorVersion.value; // the reactive trigger; the errors are held raw
+        let newest: I18nLoadError | null = null;
+        for (const info of failures.values()) newest = info;
+        return newest;
     });
 
     // ── Init: detection → SSR seed → device persistence → catalog load ────────
