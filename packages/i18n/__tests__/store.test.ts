@@ -148,6 +148,17 @@ describe('store — runtime keys: per-call default + hasKey', () => {
         warn.mockRestore();
     });
 
+    // The default IS the author's source text, so it must go through the same
+    // formatter a catalog string would — otherwise a CMS block authored as
+    // "Hi {name}" renders with the token visible to the end user.
+    it('formats the call-site default with params, like any other message', () => {
+        const { store } = setup({ fallbackLocale: 'en' });
+        expect(store.translateKey('content', 'nope', { name: 'Sam' }, { default: 'Hi {name}' })).toBe('Hi Sam');
+        expect(store.translateKey('content', 'nope', { n: 1200 }, { default: 'Count: {n, number}' })).toBe(
+            'Count: 1,200'
+        );
+    });
+
     it('prefers a real translation over the default, and interpolates it', () => {
         const { store } = setup({ fallbackLocale: 'en' });
         store.addMessages('en', 'content', { greet: 'Hi {name}' });
@@ -238,6 +249,7 @@ describe('store — invalidate', () => {
 
         await store.ensureNamespace('content');
         const pending = store.invalidate('en', 'content');
+        await flush(); // the loader is invoked inside the promise chain
         expect(store.translateKey('content', 'title')).toBe('v1'); // still the old copy
         release({ title: 'v2' });
         await pending;
@@ -253,6 +265,7 @@ describe('store — invalidate', () => {
         const { store } = setup({ fallbackLocale: 'en', load });
 
         const first = store.ensureNamespace('content'); // in flight, not yet resolved
+        await flush(); // the loader is invoked inside the promise chain
         const invalidated = store.invalidate('en', 'content');
         releaseFirst({ title: 'stale' }); // the superseded request finally answers
         await Promise.all([first, invalidated]);
@@ -370,6 +383,31 @@ describe('store — surfaced load failures', () => {
         // And once a recovers too, the error clears.
         await store.invalidate('en', 'a');
         await flush();
+        expect(store.loadError).toBeNull();
+    });
+
+    // A loader that throws synchronously (a guard clause, a bad namespace) must
+    // land on the same path as a rejection. Otherwise the throw escapes
+    // `loadOne` before any promise exists — and since `useTranslation` calls
+    // `void store.ensureNamespace(ns)` during setup, it would crash the render.
+    it('handles a loader that throws synchronously like any other failure', async () => {
+        const boom = new Error('bad namespace');
+        const load = vi.fn(() => {
+            throw boom;
+        });
+        const onLoadError = vi.fn();
+        const { store } = setup({ fallbackLocale: 'en', load, onLoadError });
+
+        await expect(store.ensureNamespace('content')).resolves.toBeUndefined();
+        await flush();
+
+        expect(onLoadError).toHaveBeenCalledWith(boom, { locale: 'en', namespace: 'content' });
+        expect(store.loadError?.error).toBe(boom);
+
+        // …and it is retryable, exactly like a rejection.
+        load.mockReturnValue({ title: 'Recovered' } as never);
+        await store.retry();
+        expect(store.translateKey('content', 'title')).toBe('Recovered');
         expect(store.loadError).toBeNull();
     });
 

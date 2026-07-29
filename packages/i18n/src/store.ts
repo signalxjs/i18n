@@ -172,13 +172,20 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         if (loaded.has(key)) return Promise.resolve();
         const pending = inflight.get(key);
         if (pending) return pending;
-        if (!config.load) return Promise.resolve();
+        const loader = config.load;
+        if (!loader) return Promise.resolve();
 
         // Snapshot this pair's generation; a superseded load touches nothing.
         const gen = keyGen.get(key) ?? 0;
         const current = () => (keyGen.get(key) ?? 0) === gen;
 
-        const job = Promise.resolve(config.load(locale, ns))
+        // Call the loader INSIDE the chain, so a synchronous throw (a guard
+        // clause, a bad namespace) lands on the same `.catch` as a rejection.
+        // `Promise.resolve(loader(...))` would let it escape before the promise
+        // existed — and `useTranslation` calls `ensureNamespace` during setup,
+        // so that throw would take the render down with it.
+        const job = Promise.resolve()
+            .then(() => loader(locale, ns))
             .then(mod => {
                 if (!current()) return;
                 const catalog: Catalog =
@@ -324,7 +331,14 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
             fallbackLocale: state.fallbackLocale,
             localeFallbacks: config.localeFallbacks,
             formatter,
-            onMissing: fallback === undefined ? onMissing : () => fallback
+            // The default is the author's source text, so it gets the same
+            // formatting a catalog string would — interpolation included, or a
+            // CMS block authored as "Hi {name}" would render the token raw.
+            // Only `onMissing` and its dev warning are skipped.
+            onMissing:
+                fallback === undefined
+                    ? onMissing
+                    : () => formatter.format(fallback, params, { locale: state.locale, key })
         };
         return translate(state.messages, key, params, { locale: state.locale, namespace }, tconfig);
     }
