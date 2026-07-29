@@ -51,6 +51,14 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # The resumability claims (zero-JS document, server-round-trip locale
+      # switch, serverOnly catalogs absent from the client build, no `node:` in
+      # the server bundle) are only observable against a real production server.
+      # Runs once — the assertions are about built artifacts, not the runtime.
+      - name: Smoke — examples/resume-i18n
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
+        run: pnpm --filter @sigx/i18n-resume-example smoke
+
   verify-pack:
     runs-on: ubuntu-latest
     steps:

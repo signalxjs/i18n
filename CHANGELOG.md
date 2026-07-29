@@ -52,6 +52,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same ground, are renderer-agnostic, and are the recommended bindings.
 
 ### Added
+- **`provideI18nConfig(options)`** — makes the config reachable with **no app**.
+  Under `@sigx/resume` there is no client app: an upgraded boundary is hydrated
+  directly, so nothing installed `createI18n`, and a boundary translating against
+  state that changes client-side threw the moment it upgraded. Call this from a
+  module the boundary's chunk imports; that chunk loads only on upgrade, so a
+  zero-JS page stays zero-JS. Client-only — a process-wide config would be shared
+  by every SSR request, and `detection.context` carries request headers. Resolution
+  order is DI first, seam second.
+- **`examples/resume-i18n`** — the reference app, mirroring core's
+  `examples/resume`: a zero-JS server-round-trip locale switch, translated copy
+  that never hydrates, a translated QRL boundary that upgrades and re-translates
+  in the browser, and a server function answering in the caller's language over a
+  `serverOnly` catalog. `pnpm --filter @sigx/i18n-resume-example smoke` runs 15
+  assertions against the production build — including that the page references
+  exactly one script and that no `node:` specifier reaches the server bundle.
 - **The server translator is now universal.** `@sigx/i18n/server` takes catalogs
   as data (`createServerT({ catalogs, … })`) and has **no `node:` imports**, so it
   runs unchanged on workerd, Deno, Bun and inside the bundled server builds the

@@ -67,6 +67,11 @@ axis.
 | `@sigx/i18n/server/node` | `loadCatalogs(dir)` — the filesystem catalog reader, the one Node-only entry |
 | `@sigx/i18n/vite` | typed-keys codegen + missing-translation build gate + HMR + the virtual catalog modules |
 
+**Examples:** `examples/showcase` (SPA), `examples/showcase-ssr` (SSR +
+hydration, plus a server-only mail route), `examples/resume-i18n` (resumability:
+zero-JS locale switch, a translated boundary that upgrades, a localized server
+function).
+
 ### Server-side translation, on any runtime
 
 `createServerT` takes catalogs **as data**, so the same call works from a Node
@@ -110,6 +115,79 @@ export const greet = serverFn(async (rq) => requestT(rq.request).t('hello', { na
 
 `@sigx/server` is not imported in either direction — you pass `rq.request`, so
 the same helper works from a plain fetch handler in a platform entry.
+
+## SSR, resumability, islands, edge
+
+| Capability | Status | What you use |
+|---|---|---|
+| **Classic SSR + hydration** | ✅ | `createI18n` + `initialMessages`; state transfers via `@sigx/store`'s `ssrState`. See `examples/showcase-ssr` |
+| **Resumability** (`@sigx/resume`) | ✅ | Server-round-trip locale switch (`localeSwitchUrl` + `localeCookie`); `provideI18nConfig` for boundaries that upgrade. See `examples/resume-i18n` |
+| **Islands** (`@sigx/ssr-islands`) | ✅ | Nothing to configure — every island root gets the document's locale and catalogs |
+| **Server functions** (`@sigx/server`) | ✅ | `createRequestT` — pass `rq.request` |
+| **Edge runtimes** (workerd, Deno, Bun) | ✅ | `@sigx/i18n/server` is `node:`-free; catalogs via `virtual:sigx-i18n/server-catalogs` |
+
+Only `@sigx/i18n/server/node` (the fs catalog reader) and `@sigx/i18n/vite`
+(build tooling) import `node:` — a test enforces that for every other module.
+
+### Switching locale on a resumable page
+
+Use a **server round trip**. This is not a workaround, it is the correct design
+under resumability:
+
+- a resumed QRL handler is runtime-free, so it cannot call `useI18n()`;
+- and every boundary that never hydrates would keep its old-language text.
+
+```tsx
+<a href={localeSwitchUrl(url, 'sv')}>SV</a>
+```
+
+The server negotiates with `resolveRequestLocale(request, …)`, renders the whole
+document in that locale, and persists the choice with `localeCookie(locale)`.
+Every boundary is correct because every boundary was re-rendered — including the
+ones that will never load a chunk.
+
+Set `persistence: { transferMessages: false }` on such a page: it ships no
+component JS on load, so catalogs in the transfer blob are bytes nothing reads.
+The locale still transfers.
+
+### What a resumed handler may capture
+
+Inside a resume module (`*.resume.tsx` or a `resume/` directory), reading `t` in
+the **render** is free — that is how the server HTML is produced:
+
+```tsx
+// ✅ extracts: the handler captures only the named signal
+const count = ctx.signal(0);
+return () => <button onClick={() => count.value++}>{t.label({ count: count.value })}</button>;
+```
+
+**Capturing** `t`, `useI18n()`, or the store in a handler does not — they are
+setup helpers, so the whole component falls back to wake-on-interaction (with a
+build-time warning naming the capture):
+
+```tsx
+// ❌ not extractable — `t` is a setup helper
+<button onClick={() => (msg.value = t.saved())}>save</button>
+```
+
+Translate it in the render, or pass the translated string in as a prop.
+
+### Translating in a boundary that upgrades
+
+A boundary whose text depends on state that changes client-side (a plural of a
+live count) must re-translate in the browser. But a resumable page has **no
+client app** — `@sigx/resume` hydrates an upgraded boundary directly, so nothing
+installed `createI18n` there. Put the config where that boundary's chunk can find
+it:
+
+```ts
+// src/i18n.ts — imported by the app entry AND by resumable components
+export const options = { fallbackLocale: 'en', supported: ['en', 'sv'], load };
+provideI18nConfig(options);   // client-only; a no-op on the server
+```
+
+It costs nothing on load: the module reaches the browser only through those
+components' chunks, which load on first upgrade and never before.
 
 ## Works on any sigx renderer (incl. lynx)
 
