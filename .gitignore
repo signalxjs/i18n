@@ -17,6 +17,9 @@ docs/dist/
 # published entry, `@sigx/i18n/virtual`), so it lives at the package root
 # rather than in src/, where nothing would emit it into dist/.
 !packages/i18n/virtual.d.ts
+# Hand-authored ambient declarations in the examples (virtual modules an app
+# must declare). Generated ones — `i18n.gen.d.ts` — stay ignored.
+!examples/*/src/env.d.ts
 *.js
 *.js.map
 

@@ -1,6 +1,6 @@
 {
     "name": "@sigx/i18n",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Reactive localization (i18n) for SignalX - namespaces, master fallback, typed keys, SSR",
     "type": "module",
     "sideEffects": false,
@@ -66,7 +66,7 @@
     "peerDependencies": {
         "@sigx/reactivity": "catalog:",
         "@sigx/runtime-core": "catalog:",
-        "@sigx/store": ">=0.11.0 <0.12.0",
+        "@sigx/store": ">=0.12.0 <0.13.0",
         "@sigx/vite": "catalog:",
         "sigx": "catalog:",
         "vite": "^8.0.0"
@@ -85,9 +85,9 @@
     "devDependencies": {
         "@sigx/reactivity": "catalog:",
         "@sigx/runtime-core": "catalog:",
-        "@sigx/store": "^0.11.0",
+        "@sigx/store": "^0.12.0",
         "@sigx/vite": "catalog:",
-        "@types/node": "^26.1.1",
+        "@types/node": "^26.1.2",
         "sigx": "catalog:",
         "typescript": "^7.0.2",
         "vite": "^8.0.3"

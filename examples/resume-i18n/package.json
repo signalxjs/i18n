@@ -1,19 +1,22 @@
 {
-  "name": "@sigx/i18n-showcase-ssr-example",
+  "name": "@sigx/i18n-resume-example",
   "version": "0.1.0",
   "private": true,
-  "description": "Server-rendered SignalX app with @sigx/i18n — real component SSR, state transfer, hydration, plus a server-only mail route",
+  "description": "Resumable, zero-JS localized page with @sigx/i18n — server-round-trip locale switch, translated QRL boundary, localized server function",
   "type": "module",
   "scripts": {
     "dev": "node server.mjs",
     "build": "vite build --app",
-    "start": "cross-env NODE_ENV=production node --conditions production server.mjs"
+    "start": "cross-env NODE_ENV=production node --conditions production server.mjs",
+    "smoke": "node smoke.mjs"
   },
   "dependencies": {
     "@sigx/i18n": "workspace:^",
     "@sigx/reactivity": "catalog:",
+    "@sigx/resume": "catalog:",
     "@sigx/runtime-core": "catalog:",
     "@sigx/runtime-dom": "catalog:",
+    "@sigx/server": "catalog:",
     "@sigx/server-renderer": "catalog:",
     "@sigx/store": "^0.12.0",
     "express": "^5.2.1",

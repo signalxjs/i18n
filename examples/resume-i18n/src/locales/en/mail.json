@@ -1,0 +1,4 @@
+{
+  "greeting": "Hello {name}, this reply was translated on the server.",
+  "signoff": "— the sigx i18n example"
+}
