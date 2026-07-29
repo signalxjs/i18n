@@ -12,6 +12,16 @@ import { defineApp, jsx } from '@sigx/runtime-core';
 import { createI18n, provideI18nConfig, type I18nOptions } from '../src/plugin.js';
 import { useI18n } from '../src/store.js';
 
+// `provideI18nConfig` gates on `isLiveClient()`, so that is what the no-op test
+// drives — not `globalThis.window`, which is merely how the runtime happens to
+// decide today. Deleting the global would couple this suite to that detail (and
+// `delete` throws outright if a runner defines `window` non-configurably).
+const runtime = vi.hoisted(() => ({ isLiveClient: vi.fn(() => true) }));
+vi.mock('@sigx/runtime-core/internals', async importOriginal => ({
+    ...(await importOriginal<typeof import('@sigx/runtime-core/internals')>()),
+    isLiveClient: runtime.isLiveClient
+}));
+
 const options = (over: Partial<I18nOptions> = {}): I18nOptions => ({
     fallbackLocale: 'en',
     supported: ['en', 'sv'],
@@ -61,15 +71,13 @@ describe('provideI18nConfig', () => {
         // A process-wide config would leak `detection.context` (request headers)
         // from one SSR request into the next.
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        delete (globalThis as any).window;
+        runtime.isLiveClient.mockReturnValue(false);
         try {
             provideI18nConfig(options());
             expect(globalThis.__SIGX_I18N_CONFIG__).toBeUndefined();
             expect(warn).toHaveBeenCalledWith(expect.stringContaining('provideI18nConfig'));
         } finally {
-            if (original) Object.defineProperty(globalThis, 'window', original);
+            runtime.isLiveClient.mockReturnValue(true);
             warn.mockRestore();
         }
     });
