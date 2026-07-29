@@ -36,7 +36,13 @@ describe('generated types enforce keys/namespaces/locales at compile time', () =
         const build = run('pnpm run build');
         expect(build.ok, build.output).toBe(true);
 
-        writeFileSync(join(pkgRoot, 'typecheck', 'i18n.gen.d.ts'), generateDts(buildManifest(entries, 'en')), 'utf-8');
+        writeFileSync(
+            join(pkgRoot, 'typecheck', 'i18n.gen.d.ts'),
+            // `content` is declared runtime-sourced: a real namespace with no
+            // build-time catalog, so its keys must stay open.
+            generateDts(buildManifest(entries, 'en', ['content'])),
+            'utf-8'
+        );
 
         const check = run('pnpm exec tsgo --noEmit -p typecheck/tsconfig.json');
         // On failure `output` shows the regression (an unused @ts-expect-error

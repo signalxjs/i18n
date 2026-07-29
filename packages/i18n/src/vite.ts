@@ -45,6 +45,18 @@ export interface I18nViteOptions {
     /** Locales to skip entirely (work-in-progress). */
     ignoreLocales?: string[];
     /**
+     * Namespaces whose messages are authored outside the codebase — a CMS, a form
+     * builder, an admin-editable email template — and so do not exist on disk at
+     * build time. They are exempt from the completeness gate, and their keys are
+     * typed as open `string` instead of a literal union, so `t(row.labelKey)`
+     * compiles. The static namespaces around them keep the full gate and the
+     * literal key union.
+     *
+     * Exact namespace names, not globs: they land in the generated `namespaces`
+     * union, so they have to be enumerable.
+     */
+    runtimeNamespaces?: string[];
+    /**
      * Namespaces that must never reach the browser — mail templates, job
      * notifications, PDF copy. Glob-ish patterns over the namespace path:
      * `*` matches within one segment, `**` across segments (`'mail'`,
@@ -109,7 +121,8 @@ export async function runI18nCheck(options: I18nViteOptions, entries?: CatalogEn
         masterLocale: options.masterLocale,
         strict: options.strict,
         ignoreMissing: options.ignoreMissing,
-        ignoreLocales: options.ignoreLocales
+        ignoreLocales: options.ignoreLocales,
+        runtimeNamespaces: options.runtimeNamespaces
     });
 }
 
@@ -119,7 +132,7 @@ export async function runI18nCheck(options: I18nViteOptions, entries?: CatalogEn
  */
 export async function writeI18nTypes(options: I18nViteOptions, entries?: CatalogEntry[]): Promise<string> {
     const scanned = entries ?? (await scanDir(options.localesDir));
-    const manifest = buildManifest(scanned, options.masterLocale);
+    const manifest = buildManifest(scanned, options.masterLocale, options.runtimeNamespaces);
     const content = generateDts(manifest);
     const out = dtsPath(options);
     let existing: string | null = null;

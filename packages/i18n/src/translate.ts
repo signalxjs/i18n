@@ -90,6 +90,29 @@ export function matchLocale(
 }
 
 /**
+ * Resolve a key within a `(locale, namespace)` scope, walking the locale
+ * fallback chain. Returns the raw message and the locale it was *found* in, or
+ * `undefined` when no locale in the chain has it.
+ *
+ * Split out of `translate` so existence can be probed (`store.hasKey`, the
+ * dynamic accessor's `exists`) without formatting or firing `onMissing`.
+ */
+export function lookup(
+    tree: MessageTree,
+    key: string,
+    scope: ResolveScope,
+    config: Pick<TranslateConfig, 'fallbackLocale' | 'localeFallbacks'>
+): { message: MessageValue; locale: string } | undefined {
+    for (const l of localeChain(scope.locale, config.fallbackLocale, config.localeFallbacks)) {
+        const cat = tree[l]?.[scope.namespace];
+        if (!cat) continue;
+        const message = getMessage(cat, key);
+        if (message !== undefined) return { message, locale: l };
+    }
+    return undefined;
+}
+
+/**
  * Translate a key within a `(locale, namespace)` scope against a message tree,
  * applying master-locale fallback along the locale chain. Returns the formatted
  * string, or the configured missing-key result (default: the key itself, with a
@@ -102,16 +125,8 @@ export function translate(
     scope: ResolveScope,
     config: TranslateConfig
 ): string {
-    const locales = localeChain(scope.locale, config.fallbackLocale, config.localeFallbacks);
-
-    for (const l of locales) {
-        const cat = tree[l]?.[scope.namespace];
-        if (!cat) continue;
-        const msg = getMessage(cat, key);
-        if (msg !== undefined) {
-            return config.formatter.format(msg, params, { locale: l, key });
-        }
-    }
+    const hit = lookup(tree, key, scope, config);
+    if (hit) return config.formatter.format(hit.message, params, { locale: hit.locale, key });
 
     if (config.onMissing) {
         return config.onMissing({ key, namespace: scope.namespace, locale: scope.locale });

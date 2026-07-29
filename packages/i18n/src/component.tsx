@@ -43,6 +43,7 @@ export function renderRich(text: string, components: RichComponents): (string | 
 export type TProps = Define.Prop<'k', string, true> &
     Define.Prop<'params', Params, false> &
     Define.Prop<'ns', string, false> &
+    Define.Prop<'default', string, false> &
     Define.Prop<'components', RichComponents, false>;
 
 /**
@@ -52,6 +53,8 @@ export type TProps = Define.Prop<'k', string, true> &
  * <T k="cart.items" params={{ count }} />
  * <T k="legal.terms" components={{ a: (c) => <a href="/terms">{c}</a> }} />
  * // lynx: <text><T k="cart.title" /></text>
+ * // runtime-sourced key, with the author's original text as the fallback:
+ * <T ns="content" k={block.labelKey} default={block.label} />
  * ```
  */
 export const T = component<TProps>(({ props }) => {
@@ -60,7 +63,7 @@ export const T = component<TProps>(({ props }) => {
     void store.ensureNamespace(ns()); // loads the namespace on first use
 
     return () => {
-        const text = store.translateKey(ns(), props.k, props.params);
+        const text = store.translateKey(ns(), props.k, props.params, { default: props.default });
         if (props.components) {
             return <>{renderRich(text, props.components)}</>;
         }

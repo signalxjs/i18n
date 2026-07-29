@@ -23,10 +23,10 @@ export type {
 } from './types.js';
 
 export { lightweightFormatter, isPluralForms } from './formatter.js';
-export { translate, getMessage, localeChain, matchLocale } from './translate.js';
+export { translate, lookup, getMessage, localeChain, matchLocale } from './translate.js';
 
 export { useI18n, useI18nConfig } from './store.js';
-export type { I18nStore, I18nRuntimeConfig, LocaleLoader } from './store.js';
+export type { I18nStore, I18nRuntimeConfig, LocaleLoader, I18nLoadError, TranslateOptions } from './store.js';
 
 export {
     detectLocale,
@@ -58,11 +58,18 @@ export type {
 export { installPersistSSR } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
 
-export { useTranslation, useLocale, createTranslator } from './accessor.js';
+export {
+    useTranslation,
+    useDynamicTranslation,
+    useLocale,
+    createTranslator,
+    createDynamicTranslator
+} from './accessor.js';
 export type {
     Translator,
     TranslatorNode,
     TypedTranslator,
+    DynamicTranslator,
     LocaleControls,
     KnownLocale,
     KnownNamespace,

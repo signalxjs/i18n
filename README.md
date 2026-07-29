@@ -58,6 +58,60 @@ payload split is automatic. Organise per-surface strings with **hierarchical
 namespace names** (`admin/users`, `public/home`); there is no separate "target"
 axis.
 
+## Catalogs that don't exist at build time
+
+Your app's own chrome lives in `*.json` on disk and gets the full treatment: a
+literal key union, and a build that **fails** when a locale is missing a string.
+User-facing *content* often doesn't — a CMS, a form builder, an admin-editable
+notification template keeps its strings **and its keys** in a database, where
+non-developers change them without a deploy.
+
+Declare those namespaces as runtime-sourced. The static namespaces around them
+keep the gate and the typed keys:
+
+```ts
+// vite.config.ts
+i18n({ localesDir: 'src/locales', masterLocale: 'en', runtimeNamespaces: ['content'] })
+```
+
+`content` is now a real namespace with **open keys** — no files on disk, and the
+completeness gate skips it:
+
+```ts
+const t = useTranslation('content');
+t(block.labelKey);                  // ✅ compiles — the key is a runtime string
+```
+
+For a dynamic key inside a *typed* namespace, reach for the explicit escape
+hatch. It is a separate hook, not a member of `t`, because every property of `t`
+is a message key — a reserved `t.exists` would be a hole in that key space:
+
+```ts
+const dyn = useDynamicTranslation('cart');
+dyn(row.labelKey, { count }, { default: row.label });  // author's text as the fallback
+if (dyn.exists(row.helpKey)) …                         // probe, no warning
+```
+
+Without `default`, a missing key falls to `onMissing`, whose default **echoes the
+key** — a raw `block.a1b2c3.label` in front of an end user. `default` is where
+the author's original string goes. `<T>` takes it too:
+
+```tsx
+<T ns="content" k={block.labelKey} default={block.label} />
+```
+
+Pick up a publish without a page reload, and surface a loader that fell over —
+a bundled `import()` failing is a broken build, but a `fetch` failing is Tuesday:
+
+```ts
+await store.invalidate('en', 'content');   // or invalidate(locale) / invalidate()
+
+const { error, retry } = useLocale();      // reactive; also config.onLoadError
+```
+
+`invalidate` is stale-while-revalidate: the old catalog keeps rendering until the
+refetch lands, so the UI never flashes raw keys.
+
 ## Packages / entries
 
 | Entry | Purpose |

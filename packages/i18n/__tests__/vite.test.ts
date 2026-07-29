@@ -74,6 +74,30 @@ describe('i18n() plugin build gate', () => {
         rmSync(out, { force: true });
     });
 
+    it('aborts when a namespace exists only outside the master locale', async () => {
+        write('sv/cart.json', { title: 'Kundvagn', hi: 'Hej {name}' });
+        write('sv/legal.json', { terms: 'Villkor' }); // no en/legal.json
+        const plugin = i18n({ localesDir: dir, masterLocale: 'en', dtsOutFile: join(dir, '..', 'gen.d.ts') });
+        await expect(runBuildStart(plugin)).rejects.toThrow(/no en\/legal catalog/);
+    });
+
+    it('exempts runtimeNamespaces from the gate and types their keys open', async () => {
+        write('sv/cart.json', { title: 'Kundvagn', hi: 'Hej {name}' });
+        const out = join(dir, '..', `gen-runtime-${process.pid}.d.ts`);
+        // `content` has no files on disk at all — it is fetched at runtime.
+        const plugin = i18n({
+            localesDir: dir,
+            masterLocale: 'en',
+            runtimeNamespaces: ['content'],
+            dtsOutFile: out
+        });
+        await expect(runBuildStart(plugin)).resolves.toBeUndefined();
+        const content = readFileSync(out, 'utf-8');
+        expect(content).toContain('namespaces: "cart" | "content";');
+        expect(content).toContain('runtimeNamespaces: "content";');
+        rmSync(out, { force: true });
+    });
+
     it('does not abort under strict:off', async () => {
         write('sv/cart.json', { title: 'Kundvagn' }); // missing `hi`
         const plugin = i18n({

@@ -35,8 +35,25 @@ describe('buildManifest', () => {
         const m = buildManifest(entries(), 'en');
         expect(m.locales).toEqual(['en', 'sv']);
         expect(m.namespaces).toEqual(['cart']);
+        expect(m.runtimeNamespaces).toEqual([]);
         expect(m.messages['cart']['hi']).toEqual({ name: 'string' });
         expect(m.messages['cart']['items']).toEqual({ count: 'number' });
+    });
+
+    // `namespaces` used to come from ALL entries while `messages` came from the
+    // master only, so the two could disagree and mint a `never`-keyed namespace.
+    it('keeps namespaces and messages in agreement, runtime namespaces aside', () => {
+        const e = [...entries(), { locale: 'sv', namespace: 'legal', catalog: { terms: 'Villkor' } }];
+        const m = buildManifest(e, 'en');
+        expect(m.namespaces).toEqual(Object.keys(m.messages).sort());
+        expect(m.namespaces).not.toContain('legal');
+    });
+
+    it('adds runtime namespaces to the union without a messages entry', () => {
+        const m = buildManifest(entries(), 'en', ['content']);
+        expect(m.namespaces).toEqual(['cart', 'content']);
+        expect(m.runtimeNamespaces).toEqual(['content']);
+        expect(m.messages['content']).toBeUndefined();
     });
 });
 
@@ -87,6 +104,28 @@ describe('checkCatalogs', () => {
         expect(warn.warnings.map(p => p.key)).toContain('title');
         expect(checkCatalogs(e, { masterLocale: 'en', strict: 'off' }).ok).toBe(true);
     });
+
+    // A namespace that exists ONLY outside the master locale used to be invisible
+    // to the whole check (the loop was driven by master entries), yet still landed
+    // in `manifest.namespaces` — a KnownNamespace whose keys resolved to `never`.
+    it('reports a namespace with no master catalog', () => {
+        const e = [...entries(), { locale: 'sv', namespace: 'legal', catalog: { terms: 'Villkor' } }];
+        const r = checkCatalogs(e, { masterLocale: 'en' });
+        expect(r.ok).toBe(false);
+        expect(r.errors).toContainEqual(
+            expect.objectContaining({ kind: 'missing-master', namespace: 'legal', locale: 'en' })
+        );
+    });
+
+    it('suppresses missing-master under ignoreLocales, runtimeNamespaces, and strict:off', () => {
+        const e = [...entries(), { locale: 'sv', namespace: 'legal', catalog: { terms: 'Villkor' } }];
+        expect(checkCatalogs(e, { masterLocale: 'en', ignoreLocales: ['sv'] }).ok).toBe(true);
+        expect(checkCatalogs(e, { masterLocale: 'en', runtimeNamespaces: ['legal'] }).ok).toBe(true);
+        expect(checkCatalogs(e, { masterLocale: 'en', strict: 'off' }).ok).toBe(true);
+        const warn = checkCatalogs(e, { masterLocale: 'en', strict: 'warn' });
+        expect(warn.ok).toBe(true);
+        expect(warn.warnings.map(p => p.kind)).toContain('missing-master');
+    });
 });
 
 describe('generateDts', () => {
@@ -95,9 +134,16 @@ describe('generateDts', () => {
         expect(dts).toContain("declare module '@sigx/i18n'");
         expect(dts).toContain('locales: "en" | "sv";');
         expect(dts).toContain('namespaces: "cart";');
+        expect(dts).toContain('runtimeNamespaces: never;');
         expect(dts).toContain('"hi": { "name": string | number };');
         expect(dts).toContain('"items": { "count": number };');
         expect(dts).toContain('"title": {};');
+    });
+
+    it('emits the runtime-namespace union so its keys stay open', () => {
+        const dts = generateDts(buildManifest(entries(), 'en', ['content']));
+        expect(dts).toContain('namespaces: "cart" | "content";');
+        expect(dts).toContain('runtimeNamespaces: "content";');
     });
 });
 

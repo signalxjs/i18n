@@ -1,9 +1,9 @@
 /** Tests for the useTranslation proxy accessor + createI18n plugin + useLocale. */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { defineApp, jsx } from '@sigx/runtime-core';
 import { computed, effect } from '@sigx/reactivity';
 import { createI18n, type I18nOptions } from '../src/plugin.js';
-import { useTranslation, useLocale } from '../src/accessor.js';
+import { useTranslation, useDynamicTranslation, useLocale } from '../src/accessor.js';
 import { useI18n } from '../src/store.js';
 
 const opts = (over: Partial<I18nOptions> = {}): I18nOptions => ({
@@ -104,6 +104,84 @@ describe('useLocale controls', () => {
         expect(locale.locale).toBe('en');
         await locale.setLocale('sv');
         expect(locale.locale).toBe('sv');
+    });
+
+    it('surfaces a load failure and clears it on retry', async () => {
+        const load = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ hi: 'Hi' });
+        const app = defineApp(jsx('div', {}));
+        app.use(createI18n(opts({ load, namespaces: ['cart'], onLoadError: vi.fn() })));
+        const locale = app.runWithContext(() => useLocale());
+
+        await locale.whenReady;
+        await new Promise(r => setTimeout(r, 0));
+        expect(locale.error).toMatchObject({ locale: 'en', namespace: 'cart' });
+
+        await locale.retry();
+        expect(locale.error).toBeNull();
+    });
+});
+
+describe('useDynamicTranslation — the untyped-key escape hatch', () => {
+    /** Resolve a dynamic translator for the runtime-sourced `content` namespace. */
+    function dynamicScenario(over: Partial<I18nOptions> = {}) {
+        const app = defineApp(jsx('div', {}));
+        app.use(createI18n(opts(over)));
+        return app.runWithContext(() => ({
+            store: useI18n(),
+            content: useDynamicTranslation('content')
+        }));
+    }
+
+    it('translates a key computed at runtime, with params', () => {
+        const { store, content } = dynamicScenario();
+        store.addMessages('en', 'content', { 'block.a1b2.label': 'Hi {name}' });
+        const key = ['block', 'a1b2', 'label'].join('.'); // not a literal at any call site
+        expect(content(key, { name: 'Sam' })).toBe('Hi Sam');
+    });
+
+    it('renders the author’s original text when the key has no translation', () => {
+        const { content } = dynamicScenario();
+        expect(content('block.zz.label', undefined, { default: 'Your full name' })).toBe('Your full name');
+        // …and echoes the key when no default is offered, as before.
+        expect(content('block.zz.label')).toBe('block.zz.label');
+    });
+
+    it('exists() probes without resolving, and is a real property (not a message key)', () => {
+        const { store, content } = dynamicScenario();
+        store.addMessages('en', 'content', { known: 'Known', exists: 'A message actually named exists' });
+
+        expect(content.exists('known')).toBe(true);
+        expect(content.exists('nope')).toBe(false);
+        // The regression this API shape exists to prevent: a catalog key literally
+        // named `exists` must still be reachable, and must not shadow the probe.
+        expect(typeof content.exists).toBe('function');
+        expect(content('exists')).toBe('A message actually named exists');
+    });
+
+    it('is reactive on locale change', async () => {
+        const { store, content } = dynamicScenario();
+        store.addMessages('en', 'content', { hi: 'Hi' });
+        store.addMessages('sv', 'content', { hi: 'Hej' });
+
+        const seen: string[] = [];
+        const stop = effect(() => seen.push(content('hi')));
+        expect(seen).toEqual(['Hi']);
+        await store.setLocale('sv');
+        expect(seen).toEqual(['Hi', 'Hej']);
+        stop.stop();
+    });
+
+    it('registers the namespace as active, so it loads lazily like useTranslation', async () => {
+        const seen: string[] = [];
+        const load = async (_l: string, ns: string) => {
+            seen.push(ns);
+            return { title: 'Loaded' };
+        };
+        const { store, content } = dynamicScenario({ load });
+        await store.whenReady;
+        await Promise.resolve();
+        expect(seen).toContain('content');
+        expect(content('title')).toBe('Loaded');
     });
 });
 

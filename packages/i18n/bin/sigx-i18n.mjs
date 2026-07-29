@@ -3,7 +3,9 @@
  * sigx-i18n — CI/scripting entry for the catalog completeness gate + type codegen.
  *
  *   sigx-i18n check  --dir src/locales --master en [--strict error|warn|off] [--targets '<json>'] [--ignore a,b]
+ *                    [--ignore-locales a,b] [--runtime-namespaces a,b]
  *   sigx-i18n types  --dir src/locales --master en --out src/i18n.gen.d.ts [--targets '<json>']
+ *                    [--runtime-namespaces a,b]
  *
  * `check` exits non-zero when catalogs are incomplete (for CI).
  */
@@ -34,6 +36,7 @@ function buildOptions(args) {
         targets: args.targets ? JSON.parse(args.targets) : undefined,
         ignoreMissing: args.ignore ? String(args.ignore).split(',') : undefined,
         ignoreLocales: args['ignore-locales'] ? String(args['ignore-locales']).split(',') : undefined,
+        runtimeNamespaces: args['runtime-namespaces'] ? String(args['runtime-namespaces']).split(',') : undefined,
         dtsOutFile: args.out
     };
 }

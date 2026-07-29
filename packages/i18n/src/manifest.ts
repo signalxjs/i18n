@@ -26,13 +26,17 @@ export interface CatalogEntry {
 export interface Manifest {
     masterLocale: string;
     locales: string[];
+    /** Master-derived namespaces, plus the declared runtime ones. */
     namespaces: string[];
+    /** Namespaces sourced at runtime — in `namespaces`, deliberately absent from `messages`. */
+    runtimeNamespaces: string[];
     /** master-derived: messages[namespace][key] = params. */
     messages: Record<string, Record<string, Record<string, ParamType>>>;
 }
 
 export interface CheckProblem {
-    kind: 'missing' | 'param-mismatch' | 'extraneous';
+    /** `missing-master`: the namespace has no catalog in the master locale at all. */
+    kind: 'missing' | 'param-mismatch' | 'extraneous' | 'missing-master';
     locale: string;
     namespace: string;
     key: string;
@@ -53,6 +57,8 @@ export interface CheckOptions {
     ignoreMissing?: string[];
     /** Locales to skip entirely (work-in-progress). */
     ignoreLocales?: string[];
+    /** Namespaces sourced at runtime — exempt from every check (see `I18nViteOptions`). */
+    runtimeNamespaces?: string[];
 }
 
 // ── Flattening + param extraction ───────────────────────────────────────────
@@ -96,10 +102,15 @@ const uniqSorted = (xs: string[]) => [...new Set(xs)].sort();
 
 // ── Manifest ────────────────────────────────────────────────────────────────
 
-export function buildManifest(entries: CatalogEntry[], masterLocale: string): Manifest {
+export function buildManifest(
+    entries: CatalogEntry[],
+    masterLocale: string,
+    runtimeNamespaces: string[] = []
+): Manifest {
     const messages: Manifest['messages'] = {};
     for (const e of entries) {
         if (e.locale !== masterLocale) continue;
+        if (runtimeNamespaces.includes(e.namespace)) continue;
         const ns = (messages[e.namespace] ??= {});
         for (const [key, value] of flatten(e.catalog)) {
             ns[key] = extractParams(value);
@@ -108,7 +119,12 @@ export function buildManifest(entries: CatalogEntry[], masterLocale: string): Ma
     return {
         masterLocale,
         locales: uniqSorted(entries.map(e => e.locale)),
-        namespaces: uniqSorted(entries.map(e => e.namespace)),
+        // Master-derived + the declared runtime namespaces, so `namespaces` and
+        // `messages` can never disagree by accident: a namespace in the union with
+        // no `messages` entry is a runtime one, deliberately, and nothing else.
+        // (`checkCatalogs` reports any other namespace missing from the master.)
+        namespaces: uniqSorted([...Object.keys(messages), ...runtimeNamespaces]),
+        runtimeNamespaces: uniqSorted(runtimeNamespaces),
         messages
     };
 }
@@ -124,16 +140,38 @@ function indexEntries(entries: CatalogEntry[]): Map<string, Map<string, MessageV
 const paramNames = (v: MessageValue) => Object.keys(extractParams(v)).sort().join(',');
 
 export function checkCatalogs(entries: CatalogEntry[], options: CheckOptions): CheckResult {
-    const { masterLocale, strict = 'error', ignoreMissing = [], ignoreLocales = [] } = options;
+    const { masterLocale, strict = 'error', ignoreMissing = [], ignoreLocales = [], runtimeNamespaces = [] } = options;
     const ignore = new Set(ignoreMissing);
     const skipLocale = new Set(ignoreLocales);
+    const runtime = new Set(runtimeNamespaces);
     const index = indexEntries(entries);
     const locales = uniqSorted(entries.map(e => e.locale)).filter(l => l !== masterLocale && !skipLocale.has(l));
 
     const problems: CheckProblem[] = [];
     const missingSeverity = strict; // 'error' | 'warn' | 'off'
 
-    const masters = entries.filter(e => e.locale === masterLocale);
+    const masters = entries.filter(e => e.locale === masterLocale && !runtime.has(e.namespace));
+
+    // A namespace carried only by non-master locales is never reached by the loop
+    // below (which is driven by master entries), so check the namespace universe
+    // separately — otherwise the gate is silent about a shape of "missing" that
+    // also produces an unusable generated type.
+    if (missingSeverity !== 'off') {
+        const masterNamespaces = new Set(masters.map(e => e.namespace));
+        const orphans = uniqSorted(
+            entries.filter(e => !skipLocale.has(e.locale) && !runtime.has(e.namespace)).map(e => e.namespace)
+        ).filter(ns => !masterNamespaces.has(ns));
+        for (const namespace of orphans) {
+            problems.push({
+                kind: 'missing-master',
+                locale: masterLocale,
+                namespace,
+                key: '*',
+                detail: `no ${masterLocale}/${namespace} catalog`
+            });
+        }
+    }
+
     for (const master of masters) {
         const masterFlat = flatten(master.catalog);
         for (const locale of locales) {
@@ -174,9 +212,9 @@ export function checkCatalogs(entries: CatalogEntry[], options: CheckOptions): C
 
 /** Format a check result as a human-readable report. */
 export function formatReport(result: CheckResult): string {
+    const glyph = { 'param-mismatch': '≠', extraneous: '+', 'missing-master': '!', missing: '−' };
     const line = (p: CheckProblem) =>
-        `  ${p.kind === 'param-mismatch' ? '≠' : p.kind === 'extraneous' ? '+' : '−'} ` +
-        `${p.locale}/${p.namespace}: ${p.key}${p.detail ? ` (${p.detail})` : ''}`;
+        `  ${glyph[p.kind]} ${p.locale}/${p.namespace}: ${p.key}${p.detail ? ` (${p.detail})` : ''}`;
     const parts: string[] = [];
     if (result.errors.length) parts.push(`${result.errors.length} error(s):`, ...result.errors.map(line));
     if (result.warnings.length) parts.push(`${result.warnings.length} warning(s):`, ...result.warnings.map(line));
@@ -206,6 +244,7 @@ export function generateDts(manifest: Manifest): string {
         '    interface Schema {',
         `        locales: ${union(manifest.locales)};`,
         `        namespaces: ${union(manifest.namespaces)};`,
+        `        runtimeNamespaces: ${union(manifest.runtimeNamespaces)};`,
         '        messages: {'
     ];
     for (const ns of Object.keys(manifest.messages).sort()) {
