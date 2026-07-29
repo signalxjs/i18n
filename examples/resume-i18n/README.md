@@ -80,7 +80,10 @@ Verified in a browser: on `?lang=sv`, `0 klick` → `1 klick`; on `?lang=en`,
 ### 4 — A localized server function
 
 `api.server.ts` builds a translator once with `createRequestT` and binds it per
-request, so `greet()` answers in the caller's language:
+request, so `greet()` answers in the caller's language. It then calls
+`.forNamespace('mail')` and uses `m.greeting({ name })` — the same typed proxy a
+component gets from `useTranslation`, checked against the generated `Schema`, so
+renaming a key in `mail.json` fails the build rather than the response:
 
 ```
 {"data":"Hello Ada, this reply was translated on the server. … [en]"}

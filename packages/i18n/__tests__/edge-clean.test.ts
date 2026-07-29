@@ -66,4 +66,75 @@ describe('edge cleanliness', () => {
         expect(referencesLoader.test(`export * from './server-node.js';`)).toBe(true);
         expect(referencesLoader.test(`import { translate } from './translate.js';`)).toBe(false);
     });
+
+    // ── The server entry is sigx-free ────────────────────────────────────────
+    // `@sigx/i18n/server` promises "no store, no signals, no app" so it runs in a
+    // mailer worker with nothing else wired up. Until now that was only an
+    // accident of the import graph. It became load-bearing when the server
+    // started sharing the client's translator: `createTranslator` lives in
+    // `translator.ts` precisely so that `server.ts` can reach it without
+    // `accessor.ts`, which imports the store at value level.
+
+    /** Follow relative `./x.js` imports from an entry, returning the whole source graph. */
+    async function graphFrom(entry: string): Promise<string[]> {
+        const seen = new Set<string>();
+        const queue = [entry];
+        while (queue.length) {
+            const name = queue.pop() as string;
+            if (seen.has(name)) continue;
+            seen.add(name);
+            let text: string;
+            try {
+                text = await readFile(join(SRC, name), 'utf-8');
+            } catch {
+                continue; // .tsx or a path we cannot resolve — not part of this entry
+            }
+            for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.\/[^'"]+)\.js['"]/g)) {
+                queue.push(`${m[1].slice(2)}.ts`);
+            }
+        }
+        return [...seen];
+    }
+
+    const SIGX_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"](?:@sigx\/[^'"]+|sigx(?:\/[^'"]*)?)['"]/;
+
+    it('keeps the whole @sigx/i18n/server graph free of sigx', async () => {
+        const graph = await graphFrom('server.ts');
+        // Sanity: the walk must actually reach the shared translator, or the
+        // assertion below proves nothing.
+        expect(graph).toContain('translator.ts');
+        expect(graph).toContain('translate.ts');
+
+        const offenders: string[] = [];
+        for (const name of graph) {
+            if (SIGX_IMPORT.test(await readFile(join(SRC, name), 'utf-8'))) offenders.push(name);
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('the sigx-import pattern is not vacuous', () => {
+        // Guards the guard, like the loader pattern above.
+        expect(SIGX_IMPORT.test(`import { defineStore } from '@sigx/store';`)).toBe(true);
+        expect(SIGX_IMPORT.test(`import { computed } from '@sigx/reactivity';`)).toBe(true);
+        expect(SIGX_IMPORT.test(`import { defineInjectable } from '@sigx/runtime-core';`)).toBe(true);
+        expect(SIGX_IMPORT.test(`import { component } from 'sigx';`)).toBe(true);
+        expect(SIGX_IMPORT.test(`import type { Plugin } from '@sigx/vite';`)).toBe(true);
+        expect(SIGX_IMPORT.test(`const s = await import('@sigx/store');`)).toBe(true);
+        expect(SIGX_IMPORT.test(`import { translate } from './translate.js';`)).toBe(false);
+        expect(SIGX_IMPORT.test(`import type { Params } from './types.js';`)).toBe(false);
+    });
+
+    it('proves the graph walk would catch a store import (accessor.ts does have one)', async () => {
+        // The client accessor legitimately imports the store; if the walk from
+        // `server.ts` ever reaches it, the invariant above must fail. Asserting
+        // the walk from `accessor.ts` DOES find sigx pins that the detector and
+        // the traversal actually work together.
+        const graph = await graphFrom('accessor.ts');
+        expect(graph).toContain('store.ts');
+        const offenders: string[] = [];
+        for (const name of graph) {
+            if (SIGX_IMPORT.test(await readFile(join(SRC, name), 'utf-8'))) offenders.push(name);
+        }
+        expect(offenders).toContain('store.ts');
+    });
 });

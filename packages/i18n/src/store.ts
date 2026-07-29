@@ -11,11 +11,19 @@
 import { defineInjectable } from '@sigx/runtime-core';
 import { computed, signal } from '@sigx/reactivity';
 import { defineStore, type SetupStoreContext } from '@sigx/store';
-import { lookup, matchLocale, translate } from './translate.js';
+import { lookup, matchLocale, translateWith } from './translate.js';
 import { lightweightFormatter } from './formatter.js';
 import { createDetectors, detectLocale, type DetectionOptions } from './detect.js';
 import { installPersistSSR, type PersistSSROptions } from './persist-ssr.js';
-import type { Catalog, Formatter, MessageTree, MissingInfo, Params, TranslateConfig } from './types.js';
+import type {
+    Catalog,
+    Formatter,
+    MessageTree,
+    MissingInfo,
+    Params,
+    TranslateConfig,
+    TranslateOptions
+} from './types.js';
 
 /**
  * Loads one catalog for a `(locale, namespace)`. May return the catalog directly
@@ -29,17 +37,6 @@ export interface I18nLoadError {
     error: unknown;
     locale: string;
     namespace: string;
-}
-
-/** Per-call overrides for one `translateKey` lookup. */
-export interface TranslateOptions {
-    /**
-     * Text to return when the key resolves in no locale — the author's original
-     * string for a runtime-sourced message. Bypasses `onMissing` (and its
-     * dev warning) entirely: an explicit call-site fallback means the miss is
-     * expected, not a bug.
-     */
-    default?: string;
 }
 
 /** Fully-resolved runtime config consumed by the store (defaults already applied). */
@@ -371,21 +368,20 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
      * make renders/computeds reactive.
      */
     function translateKey(namespace: string, key: string, params?: Params, options?: TranslateOptions): string {
-        const fallback = options?.default;
         const tconfig: TranslateConfig = {
             fallbackLocale: state.fallbackLocale,
             localeFallbacks: config.localeFallbacks,
             formatter,
-            // The default is the author's source text, so it gets the same
-            // formatting a catalog string would — interpolation included, or a
-            // CMS block authored as "Hi {name}" would render the token raw.
-            // Only `onMissing` and its dev warning are skipped.
-            onMissing:
-                fallback === undefined
-                    ? onMissing
-                    : () => formatter.format(fallback, params, { locale: state.locale, key })
+            onMissing
         };
-        return translate(state.messages, key, params, { locale: state.locale, namespace }, tconfig);
+        return translateWith(
+            state.messages,
+            key,
+            params,
+            { locale: state.locale, namespace },
+            tconfig,
+            options
+        );
     }
 
     /**

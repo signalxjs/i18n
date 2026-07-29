@@ -15,6 +15,9 @@
  *     fallbackLocale: 'en',
  *     defaultNamespace: 'mail'
  * });
+ *
+ * const m = t.forLocale('sv').forNamespace('mail');
+ * m.subject(); // typed against the generated Schema, same as on the client
  * ```
  */
 
@@ -84,8 +87,8 @@ export async function loadCatalogs(localesDir: string): Promise<MessageTree> {
 export { createServerT, createRequestT } from './server.js';
 export type {
     ServerI18nOptions,
-    ServerScope,
+    ServerTranslateOptions,
     ServerTranslator,
-    RequestTranslator,
+    LocaleTranslator,
     RequestTOptions
 } from './server.js';

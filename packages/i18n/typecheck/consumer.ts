@@ -8,6 +8,7 @@
  * the test. Not part of the package build or the main typecheck.
  */
 import { useTranslation, useDynamicTranslation, useLocale } from '@sigx/i18n';
+import { createServerT } from '@sigx/i18n/server';
 
 // The generated fixture Schema declares namespace 'cart' with keys:
 //   title (no params), hi ({ name }), items ({ count }); locales en|sv.
@@ -77,3 +78,43 @@ void present;
 // The namespace itself is still checked — only the keys are open.
 // @ts-expect-error unknown namespace is a compile error
 useDynamicTranslation('no-such-namespace');
+
+// ── The server gets the SAME typed surface ───────────────────────────────────
+// This is the load-bearing half of the client/server streamline: a mail template
+// is key-checked against the generated Schema exactly like a component, so
+// renaming a key in the catalog fails the build instead of the email.
+const server = createServerT({ catalogs: {}, fallbackLocale: 'en', defaultNamespace: 'cart' });
+const sv = server.forLocale('sv');
+const svLocale: string = sv.locale;
+void svLocale;
+
+const mail = sv.forNamespace('cart');
+mail.title(); // no-param leaf, typed
+mail.hi({ name: 'Sam' }); // typed param
+mail.items({ count: 3 }); // typed param (plural)
+mail('title'); // string-key form, key validated
+
+// @ts-expect-error unknown key through the server proxy is a compile error
+mail('does.not.exist');
+// @ts-expect-error unknown nested key through the server proxy is a compile error
+mail.nope;
+// @ts-expect-error `title` takes no params, on the server too
+mail.title({ x: 1 });
+// @ts-expect-error unknown namespace is a compile error
+sv.forNamespace('no-such-namespace');
+
+// A runtime-sourced namespace stays open-keyed on the server as well.
+sv.forNamespace('content')(runtimeKey);
+
+// The server dynamic form mirrors `useDynamicTranslation`.
+const serverDyn = sv.dynamic('cart');
+serverDyn(runtimeKey, undefined, { default: 'Author text' });
+const serverPresent: boolean = serverDyn.exists(runtimeKey);
+void serverPresent;
+// @ts-expect-error unknown namespace is a compile error for the dynamic form too
+sv.dynamic('no-such-namespace');
+
+// The unbound one-off call is open-keyed by design (no namespace bound).
+server.t(runtimeKey, { name: 'Sam' }, { locale: 'sv', namespace: 'cart', default: 'Author text' });
+const serverExists: boolean = server.exists(runtimeKey, { locale: 'sv', namespace: 'cart' });
+void serverExists;

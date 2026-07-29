@@ -151,6 +151,18 @@ function main() {
             "if (keys.length === 0) throw new Error('@sigx/i18n exports no named bindings');",
             "console.log('\\u2713 @sigx/i18n named exports:', keys.join(', '));",
             '',
+            // The `./server` subpath is the one a mailer/edge worker imports, and
+            // it must resolve and RUN with no sigx package installed beyond the
+            // peers above — exercise it, don't just import it.
+            "import { createServerT } from '@sigx/i18n/server';",
+            "const t = createServerT({ catalogs: { en: { mail: { hi: 'Hi {name}', subject: 'Welcome' } } }, fallbackLocale: 'en', defaultNamespace: 'mail' });",
+            "const bound = t.forLocale('en').forNamespace('mail');",
+            "if (bound.hi({ name: 'Ada' }) !== 'Hi Ada') throw new Error('@sigx/i18n/server translator is broken');",
+            // Bare coercion resolves with no params, so probe a param-less key.
+            "if (`${bound.subject}` !== 'Welcome') throw new Error('@sigx/i18n/server proxy coercion is broken');",
+            "if (t.forLocale('en').dynamic('mail')('nope', undefined, { default: 'Fallback' }) !== 'Fallback') throw new Error('@sigx/i18n/server default is broken');",
+            "console.log('\\u2713 @sigx/i18n/server typed proxy + dynamic default work');",
+            '',
         ].join('\n')
     );
 

@@ -55,6 +55,11 @@ pnpm --filter @sigx/i18n-showcase-ssr-example start
   from the client loader's glob, so it never ships to the browser. (On an edge
   runtime the same `createServerT` call takes
   `virtual:sigx-i18n/server-catalogs` instead — no filesystem, no `node:` import.)
+  Note `server.mjs` uses `t.forLocale(locale).forNamespace('mail')` and then
+  `${m.subject}` / `m.welcome({ name })` — the *same* proxy a component gets from
+  `useTranslation`, over a catalog tree instead of the reactive store. `ps` exists
+  only in `en/mail.json`, so the Swedish mail shows the master-locale fallback
+  working through it.
 
 ## Verify the SSR is real
 
