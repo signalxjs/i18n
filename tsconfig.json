@@ -13,6 +13,7 @@
     "paths": {
       "@sigx/i18n": ["./packages/i18n/src/index.ts"],
       "@sigx/i18n/server": ["./packages/i18n/src/server.ts"],
+      "@sigx/i18n/server/node": ["./packages/i18n/src/server-node.ts"],
       "@sigx/i18n/vite": ["./packages/i18n/src/vite.ts"]
     }
   },

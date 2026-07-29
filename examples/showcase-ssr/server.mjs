@@ -23,8 +23,15 @@ const isBot = (ua) => /bot|crawl|spider|slurp|gptbot|claudebot|perplexity|headle
 // A server-ONLY route: render a localized email with the DI-free translator.
 // Its `mail` namespace is never in the client loader's glob — server-only.
 async function mailRoute(req, res) {
-    const { createServerT } = await import('@sigx/i18n/server');
-    const t = await createServerT({ localesDir, fallbackLocale: 'en', defaultNamespace: 'mail' });
+    // The fs loader lives in `/server/node`; `createServerT` itself is universal
+    // (no `node:` imports) so the same call runs in a bundled edge build over
+    // `virtual:sigx-i18n/server-catalogs` instead.
+    const { createServerT, loadCatalogs } = await import('@sigx/i18n/server/node');
+    const t = createServerT({
+        catalogs: await loadCatalogs(localesDir),
+        fallbackLocale: 'en',
+        defaultNamespace: 'mail'
+    });
     const locale = typeof req.query.lang === 'string' ? req.query.lang : 'en';
     const m = t.forLocale(locale, { namespace: 'mail' });
     const name = 'Ada';

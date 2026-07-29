@@ -37,9 +37,23 @@ export {
     settingsDetector,
     browserDetector,
     cookieDetector,
-    urlDetector
+    urlDetector,
+    detectionContextFromRequest,
+    resolveRequestLocale,
+    localeCookie,
+    localeSwitchUrl,
+    LOCALE_COOKIE
 } from './detect.js';
-export type { Detector, DetectionContext, DetectionOptions } from './detect.js';
+export type {
+    Detector,
+    DetectionContext,
+    DetectionOptions,
+    HeadersLike,
+    RequestLike,
+    RequestLocaleOptions,
+    LocaleCookieOptions,
+    LocaleSwitchOptions
+} from './detect.js';
 
 export { installPersistSSR } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
