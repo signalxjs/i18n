@@ -41,7 +41,12 @@ jobs:
       #   remote: Duplicate header: "Authorization"  ->  HTTP 400
       # before the action ever looks at the diff. peter-evans/create-pull-request#4272
       # is open against checkout v6+ and reports it unfixed in create-pull-request v7
-      # and v8 as of 2026-07, so bumping the PR action is not the way out.
+      # and v8 as of 2026-07, so bumping the PR action is not the way out. (Re-verified
+      # 2026-07-29: #4272 still open; v8.0.0 only adds Node 24 runner support and
+      # updates docs to reference checkout v6. signalxjs/i18n#22 was closed over this.)
+      # The known-good pair is actions/checkout@v5 + create-pull-request@v6, and
+      # .github/dependabot.yml now ignores majors for BOTH so they stop being proposed.
+      # When #4272 closes: drop those ignores and bump the two together, not apart.
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6

@@ -22,3 +22,18 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Majors held back ON PURPOSE — see the pin rationale in
+    # .github/workflows/core-sync.yml. checkout v6 moved credential storage to
+    # git's `includeIf`, which create-pull-request does not detect, so it adds a
+    # SECOND auth header and every push fails with
+    # `remote: Duplicate header: "Authorization"`.
+    # peter-evans/create-pull-request#4272 is open and create-pull-request v8
+    # does NOT fix it. Drop these ignores once #4272 closes; minors and patches
+    # still flow through as normal.
+    ignore:
+      - dependency-name: actions/checkout
+        update-types:
+          - version-update:semver-major
+      - dependency-name: peter-evans/create-pull-request
+        update-types:
+          - version-update:semver-major
