@@ -87,7 +87,7 @@
         "@sigx/runtime-core": "catalog:",
         "@sigx/store": "^0.12.0",
         "@sigx/vite": "catalog:",
-        "@types/node": "^26.1.1",
+        "@types/node": "^26.1.2",
         "sigx": "catalog:",
         "typescript": "^7.0.2",
         "vite": "^8.0.3"
