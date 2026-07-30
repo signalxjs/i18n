@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-30
+
+Pre-1.0, so the **breaking server-entry change below lands in a minor**. If you
+only consume the client entry (`@sigx/i18n`), this release is purely additive;
+if you import `@sigx/i18n/server`, read "Changed / removed — BREAKING" before
+upgrading.
+
 ### Added
 - **Translate into a locale other than the active one** (#32) — the client half of
   the server's `forLocale`. A preview pane, a list whose rows each carry their own
