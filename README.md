@@ -112,6 +112,37 @@ const { error, retry } = useLocale();      // reactive; also config.onLoadError
 `invalidate` is stale-while-revalidate: the old catalog keeps rendering until the
 refetch lands, so the UI never flashes raw keys.
 
+## Translating into a locale that isn't the active one
+
+A translation editor previewing `sv` while the operator browses in `en`; a list of
+support tickets where each row carries its own locale; composing a notification in
+the recipient's language. Pin a translator to a locale — no `setLocale` round trip,
+no second store, and the catalog is **fetched** for that locale on first use:
+
+```tsx
+const t = useTranslation('cart');                       // the active locale
+const tSv = useTranslation('cart', { locale: 'sv' });   // pinned to Swedish
+
+<T k="cart.title" locale={row.locale} />                // declarative, per row
+```
+
+A pinned translator is reactive to **its own** catalog arriving and **inert** to
+the active locale: `setLocale` repaints the app around it and leaves it alone. Keys
+stay just as typed, the locale is checked like `setLocale`'s, and the locale chain
+still applies from where it was pinned (`sv-FI` → `sv` → master).
+
+Off a component, it is the **same call the server makes** — that is the whole
+point:
+
+```ts
+useI18n().forLocale('sv').forNamespace('cart');       // client, reactive
+createServerT({ … }).forLocale('sv').forNamespace('cart');  // server, not
+```
+
+`.t()`, `.exists()` and `.dynamic()` hang off both. To warm a catalog ahead of a
+render (opening a preview pane, say), `await store.ensureNamespace('cart', 'sv')` —
+the second argument defaults to the active locale.
+
 ## Overriding a catalog you don't own
 
 A library or product ships default catalogs; a downstream app — or one per-tenant,

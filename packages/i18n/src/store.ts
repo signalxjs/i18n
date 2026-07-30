@@ -12,6 +12,7 @@ import { defineInjectable } from '@sigx/runtime-core';
 import { computed, signal } from '@sigx/reactivity';
 import { defineStore, type SetupStoreContext } from '@sigx/store';
 import { localeChain, lookup, matchLocale, translateWith } from './translate.js';
+import { bindLocale, type BoundTranslator, type KnownLocale, type TranslationSource } from './translator.js';
 import { BASE_LAYER, composeAt, layerFor, type LayeredMessages } from './layers.js';
 import { lightweightFormatter } from './formatter.js';
 import { createDetectors, detectLocale, type DetectionOptions } from './detect.js';
@@ -31,6 +32,20 @@ import type {
  * or an ESM module with a `default`. Namespaces may be hierarchical (`admin/users`).
  */
 export type LocaleLoader = (locale: string, namespace: string) => Promise<Catalog | { default: Catalog }>;
+
+/**
+ * Per-call options for `store.translateKey` — the shared {@link TranslateOptions}
+ * plus a locale to resolve **in place of the active one**.
+ *
+ * `locale` lives here rather than on `TranslateOptions` on purpose: that type is
+ * shared with `@sigx/i18n/server`, where a locale is *bound* (`forLocale`) rather
+ * than passed per call. Prefer `store.forLocale(locale)` /
+ * `useTranslation(ns, { locale })`; this is the primitive underneath them.
+ */
+export interface StoreTranslateOptions extends TranslateOptions {
+    /** Resolve in this locale instead of the active one. Its chain still applies. */
+    locale?: string;
+}
 
 /** A catalog load that failed, as surfaced by `useLocale().error`. */
 export interface I18nLoadError {
@@ -195,6 +210,11 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     // Namespaces requested so far (config-listed, plus per-consumer `ensureNamespace`
     // / `loadNamespace`). Each loads only on first use → per-surface payload split.
     const activeNamespaces = new Set<string>(config.namespaces ?? []);
+    // `(ns, locale)` pairs `ensureNamespace` has already requested — the dedupe
+    // for the hot path, since a render calls it on every pass. Keyed by pair, not
+    // by namespace: a preview pinned to `sv` must still load a namespace the app
+    // already loaded for `en`.
+    const ensured = new Set<string>();
     // Completed loads and in-flight loads, keyed (locale,ns) — dedupe + no refetch.
     const loaded = new Set<string>();
     const inflight = new Map<string, Promise<void>>();
@@ -549,15 +569,25 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     });
 
     /**
-     * Register a namespace as active and kick off its load for the current locale.
-     * Reactive callers (the accessor, `<T>`, `use:t`) call this on first use, so a
-     * namespace's JSON loads only when a component that uses it renders. Returns a
-     * promise for the initial load (useful for SSR awaiting).
+     * Register a namespace as active and kick off its load for `locale`
+     * (default: the active one). Reactive callers (the accessor, `<T>`, `use:t`)
+     * call this on first use, so a namespace's JSON loads only when a component
+     * that uses it renders. Returns a promise for the load (useful for SSR
+     * awaiting).
+     *
+     * Naming a locale is how a pinned translator gets its catalog without a
+     * `setLocale` round trip: `ensureNamespace('cart', 'sv')` loads `sv` + the
+     * master locale and leaves the active locale alone.
+     *
+     * Deduped per (ns, locale) — a namespace already ensured for `en` still loads
+     * when a preview pane asks for it in `sv`.
      */
-    function ensureNamespace(ns: string): Promise<void> {
-        const isNew = !activeNamespaces.has(ns);
+    function ensureNamespace(ns: string, locale: string = state.locale): Promise<void> {
         activeNamespaces.add(ns);
-        return isNew ? loadNamespaceFor(ns, state.locale) : Promise.resolve();
+        const key = ns + KEY_SEP + locale;
+        if (ensured.has(key)) return Promise.resolve();
+        ensured.add(key);
+        return loadNamespaceFor(ns, locale);
     }
 
     // Missing-key handling: a key that resolves to nothing WHILE catalogs are
@@ -584,8 +614,17 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
      * Reactive translation. A plain method (NOT an action) so reads of
      * `state.locale`/`state.messages` happen in the caller's tracking scope and
      * make renders/computeds reactive.
+     *
+     * With `options.locale`, `state.locale` is never read — which is what makes a
+     * pinned translator inert with respect to the active locale while still
+     * repainting when *its* catalog lands in `state.messages`.
      */
-    function translateKey(namespace: string, key: string, params?: Params, options?: TranslateOptions): string {
+    function translateKey(
+        namespace: string,
+        key: string,
+        params?: Params,
+        options?: StoreTranslateOptions
+    ): string {
         const tconfig: TranslateConfig = {
             fallbackLocale: state.fallbackLocale,
             localeFallbacks: config.localeFallbacks,
@@ -596,7 +635,7 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
             state.messages,
             key,
             params,
-            { locale: state.locale, namespace },
+            { locale: options?.locale ?? state.locale, namespace },
             tconfig,
             options
         );
@@ -607,12 +646,12 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
      * `translateKey`, and deliberately side-effect free — no `onMissing`, no
      * dev warning — so it can gate rendering on a runtime-sourced key.
      */
-    function hasKey(namespace: string, key: string): boolean {
+    function hasKey(namespace: string, key: string, locale?: string): boolean {
         return (
             lookup(
                 state.messages,
                 key,
-                { locale: state.locale, namespace },
+                { locale: locale ?? state.locale, namespace },
                 { fallbackLocale: state.fallbackLocale, localeFallbacks: config.localeFallbacks }
             ) !== undefined
         );
@@ -621,17 +660,48 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     /**
      * Which `(layer, locale)` supplies `key` — the answer to "why is this string
      * wrong", which gets genuinely hard to work out by inspection once there are
-     * both a locale chain and a layer stack.
+     * both a locale chain and a layer stack. Pass `locale` to explain a pinned
+     * translator's resolution rather than the active one's.
      *
      * Walks the locale chain outer, layers inner (high→low), mirroring exactly
      * how the value was resolved. Returns `null` when the key resolves nowhere.
      */
-    function explain(namespace: string, key: string): { layer: string; locale: string } | null {
-        for (const l of localeChain(state.locale, state.fallbackLocale, config.localeFallbacks)) {
+    function explain(
+        namespace: string,
+        key: string,
+        locale?: string
+    ): { layer: string; locale: string } | null {
+        for (const l of localeChain(locale ?? state.locale, state.fallbackLocale, config.localeFallbacks)) {
             const layer = layerFor(layerTrees, layerOrder, l, namespace, key);
             if (layer) return { layer, locale: l };
         }
         return null;
+    }
+
+    /**
+     * A translator pinned to `locale`, whatever the active locale is — the client
+     * half of `createServerT().forLocale()`, and what a preview pane, a
+     * mixed-locale list or a "compose in the recipient's locale" screen needs.
+     *
+     * It reads `state.messages` reactively (so it repaints when its own catalog
+     * arrives) and never reads `state.locale` (so `setLocale` leaves it alone).
+     * Every call registers the namespace and kicks off its load **for the pinned
+     * locale** — no `setLocale` round trip.
+     *
+     * ```ts
+     * const m = store.forLocale('sv').forNamespace('cart');
+     * m.title;                        // Swedish, while the app stays on 'en'
+     * ```
+     */
+    function forLocale(locale: KnownLocale): BoundTranslator {
+        const source: TranslationSource = {
+            translateKey: (ns, key, params, options) =>
+                translateKey(ns, key, params, { ...options, locale }),
+            hasKey: (ns, key) => hasKey(ns, key, locale)
+        };
+        return bindLocale(source, locale, config.defaultNamespace ?? 'translation', ns => {
+            void ensureNamespace(ns, locale);
+        });
     }
 
     const loading = computed(
@@ -710,6 +780,7 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         translateKey,
         hasKey,
         explain,
+        forLocale,
         layers: layerOrder,
         ensureNamespace,
         whenReady,

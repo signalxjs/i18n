@@ -31,7 +31,13 @@ export type { LayeredMessages } from './layers.js';
 export { translate, translateWith, lookup, getMessage, localeChain, matchLocale } from './translate.js';
 
 export { useI18n, useI18nConfig } from './store.js';
-export type { I18nStore, I18nRuntimeConfig, LocaleLoader, I18nLoadError } from './store.js';
+export type {
+    I18nStore,
+    I18nRuntimeConfig,
+    LocaleLoader,
+    I18nLoadError,
+    StoreTranslateOptions
+} from './store.js';
 
 export {
     detectLocale,
@@ -65,16 +71,18 @@ export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
 
 // The client hooks (DI layer).
 export { useTranslation, useDynamicTranslation, useLocale } from './accessor.js';
-export type { LocaleControls } from './accessor.js';
+export type { LocaleControls, TranslationOptions } from './accessor.js';
 
 // The translator surface itself — shared verbatim with `@sigx/i18n/server`.
-export { createTranslator, createDynamicTranslator } from './translator.js';
+export { createTranslator, createDynamicTranslator, bindLocale } from './translator.js';
 export type {
     TranslationSource,
     Translator,
     TranslatorNode,
     TypedTranslator,
     DynamicTranslator,
+    BoundTranslator,
+    BoundTranslateOptions,
     KnownLocale,
     KnownNamespace,
     KeysForNamespace

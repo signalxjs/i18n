@@ -43,6 +43,7 @@ export function renderRich(text: string, components: RichComponents): (string | 
 export type TProps = Define.Prop<'k', string, true> &
     Define.Prop<'params', Params, false> &
     Define.Prop<'ns', string, false> &
+    Define.Prop<'locale', string, false> &
     Define.Prop<'default', string, false> &
     Define.Prop<'components', RichComponents, false>;
 
@@ -55,15 +56,25 @@ export type TProps = Define.Prop<'k', string, true> &
  * // lynx: <text><T k="cart.title" /></text>
  * // runtime-sourced key, with the author's original text as the fallback:
  * <T ns="content" k={block.labelKey} default={block.label} />
+ * // pinned to a locale that isn't the active one (a preview, a per-row locale):
+ * <T k="cart.title" locale={row.locale} />
  * ```
  */
 export const T = component<TProps>(({ props }) => {
     const store = useI18n();
     const ns = () => props.ns ?? store.defaultNamespace;
-    void store.ensureNamespace(ns()); // loads the namespace on first use
 
     return () => {
-        const text = store.translateKey(ns(), props.k, props.params, { default: props.default });
+        // Ensured in the RENDER, not in setup: `ns`/`locale` are props and may
+        // change (a list re-keyed to another row's locale), and each pair needs
+        // its own load. `ensureNamespace` dedupes per pair, so this is one Set
+        // lookup per pass, and a loader only ever writes asynchronously — no
+        // render loop.
+        void store.ensureNamespace(ns(), props.locale);
+        const text = store.translateKey(ns(), props.k, props.params, {
+            default: props.default,
+            locale: props.locale
+        });
         if (props.components) {
             return <>{renderRich(text, props.components)}</>;
         }

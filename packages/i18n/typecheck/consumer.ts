@@ -7,7 +7,7 @@
  * bad usage becomes valid, the unused directive fails the compile, which fails
  * the test. Not part of the package build or the main typecheck.
  */
-import { useTranslation, useDynamicTranslation, useLocale } from '@sigx/i18n';
+import { useTranslation, useDynamicTranslation, useLocale, type I18nStore } from '@sigx/i18n';
 import { createServerT } from '@sigx/i18n/server';
 
 // The generated fixture Schema declares namespace 'cart' with keys:
@@ -66,6 +66,27 @@ const dflt = useTranslation();
 dflt('title'); // a statically-known key still resolves
 // @ts-expect-error the no-arg form must still reject an unknown key
 dflt('totally.made.up.key');
+
+// ── Pinned to a locale that isn't the active one (#32) ───────────────────────
+// The keys stay just as typed as the active-locale form, and the locale itself
+// is checked exactly like `setLocale`.
+const tSv = useTranslation('cart', { locale: 'sv' });
+tSv.title();
+tSv.hi({ name: 'Åsa' });
+tSv('title');
+// @ts-expect-error a pinned translator keeps the literal key union
+tSv('does.not.exist');
+// @ts-expect-error unknown locale is a compile error
+useTranslation('cart', { locale: 'zz' });
+// @ts-expect-error unknown locale is a compile error, on the dynamic hook too
+useDynamicTranslation('content', { locale: 'zz' });
+
+// Off the store, for non-component callers — the same shape the server returns.
+declare const store: I18nStore;
+store.forLocale('sv').forNamespace('cart').items({ count: 2 });
+store.forLocale('sv').t('anything');
+// @ts-expect-error unknown locale is a compile error
+store.forLocale('zz');
 
 // ── The untyped escape hatch, for a dynamic key in a TYPED namespace ─────────
 const dyn = useDynamicTranslation('cart');

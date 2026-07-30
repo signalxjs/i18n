@@ -51,18 +51,41 @@ import {
 } from './translator.js';
 
 /**
+ * Options for {@link useTranslation} / {@link useDynamicTranslation}.
+ */
+export interface TranslationOptions {
+    /**
+     * Translate into this locale instead of the active one — a preview pane, a
+     * list whose rows each carry their own locale, or composing a message in the
+     * recipient's locale. The catalog is loaded for that locale (no `setLocale`
+     * round trip), and its locale chain still applies (`sv-FI` → `sv` → master).
+     *
+     * A pinned translator is deliberately NOT reactive to the active locale: it
+     * repaints when its own catalog arrives and ignores `setLocale`.
+     */
+    locale?: KnownLocale;
+}
+
+/**
  * Resolve the i18n store and return a translator for `namespace` (defaulting to
  * the configured default namespace). Registers the namespace as active and kicks
  * off its lazy load. Call inside a component setup (or `app.runWithContext`).
  *
  * With `@sigx/i18n/vite` codegen, the namespace and the string-key form are typed
  * to the real catalog; without it, both accept any string.
+ *
+ * ```ts
+ * const t = useTranslation('cart');                      // the active locale
+ * const tSv = useTranslation('cart', { locale: 'sv' });  // pinned to Swedish
+ * ```
  */
 export function useTranslation<NS extends KnownNamespace = KnownNamespace>(
-    namespace?: NS
+    namespace?: NS,
+    options?: TranslationOptions
 ): TypedTranslator<NS> {
     const store = useI18n();
     const ns = namespace ?? store.defaultNamespace;
+    if (options?.locale !== undefined) return store.forLocale(options.locale).forNamespace(ns as NS);
     void store.ensureNamespace(ns); // loads the namespace on first use
     return createTranslator(store, ns) as unknown as TypedTranslator<NS>;
 }
@@ -80,10 +103,12 @@ export function useTranslation<NS extends KnownNamespace = KnownNamespace>(
  * ```
  */
 export function useDynamicTranslation<NS extends KnownNamespace = KnownNamespace>(
-    namespace?: NS
+    namespace?: NS,
+    options?: TranslationOptions
 ): DynamicTranslator {
     const store = useI18n();
     const ns = namespace ?? store.defaultNamespace;
+    if (options?.locale !== undefined) return store.forLocale(options.locale).dynamic(ns);
     void store.ensureNamespace(ns); // loads the namespace on first use
     return createDynamicTranslator(store, ns);
 }
