@@ -5,10 +5,11 @@ Publishing happens via GitHub Actions tag push, using npm Trusted Publishing (OI
 ## Pre-release checklist
 
 - [ ] `pnpm install`, `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint` all pass on `main`.
-- [ ] `pnpm publish:dry` succeeds. Needs a local npm login (`npm whoami`) — the
-      real publish uses OIDC in CI and needs no token, so a 401 here is a gap in
-      your local auth, not in the packages. Skip it if you aren't logged in; the
-      release workflow re-runs lint/typecheck/build/test before publishing anyway.
+- [ ] **Only if `npm whoami` succeeds:** `pnpm publish:dry` passes. Not a release
+      blocker — it is a local convenience check that needs a local npm login,
+      while the real publish uses OIDC in CI and needs no token. A 401 here means
+      you are logged out, not that anything is wrong with the packages, and the
+      release workflow re-runs lint/typecheck/build/test before publishing.
 - [ ] `CHANGELOG.md` entries added, and `## [Unreleased]` rolled into a
       `## [X.Y.Z] - YYYY-MM-DD` section (leave an empty `## [Unreleased]` above it).
 - [ ] `repository`, `homepage`, `bugs` fields point at `signalxjs/i18n`.
