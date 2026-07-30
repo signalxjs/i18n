@@ -360,3 +360,20 @@ describe('server — catalogs always fills the lowest layer', () => {
         warn.mockRestore();
     });
 });
+
+describe('server — an empty layer keeps the fast path', () => {
+    it('treats withLayers({ tenant: {} }) as a no-op, by identity', () => {
+        const catalogs: MessageTree = { en: { mail: { subject: 'Welcome' } } };
+        const t = createServerT({
+            catalogs,
+            layers: ['base', 'tenant'],
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+        // "No overrides for this tenant" is a common case; it must not force a
+        // full walk and a copy of the base.
+        const none = t.forLocale('en').withLayers({ tenant: {} });
+        expect(none.forNamespace('mail').subject()).toBe('Welcome');
+        expect(t.messages).toBe(catalogs);
+    });
+});

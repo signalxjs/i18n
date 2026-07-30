@@ -191,7 +191,14 @@ export function createServerT(options: ServerI18nOptions): ServerTranslator {
      * caller passed in.
      */
     const effectiveOf = (layered: LayeredMessages): MessageTree => {
-        const contributing = layerOrder.filter(layer => layered[layer]);
+        // An empty tree contributes nothing to `composeAt`, so treat it as absent
+        // — otherwise the common `withLayers({ tenant: {} })` ("no overrides for
+        // this tenant") would lose the identity fast path and walk the whole tree
+        // to produce a copy of the base.
+        const contributing = layerOrder.filter(layer => {
+            const tree = layered[layer];
+            return tree && Object.keys(tree).length > 0;
+        });
         if (contributing.length <= 1) return layered[contributing[0]] ?? {};
         const out: MessageTree = {};
         for (const layer of contributing) {

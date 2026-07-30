@@ -660,3 +660,36 @@ describe('store — layer misconfiguration is loud, not silent', () => {
         warn.mockRestore();
     });
 });
+
+describe('store — setLayer clears a stuck error state', () => {
+    it('clears the failure for the layer it replaces', async () => {
+        // Without this, `loadError` stayed set forever: the caller has supplied
+        // the layer's contents, and `retry()` could not clear it either because
+        // `writeLayer` marks the pair loaded, so `loadOne` short-circuits before
+        // reaching `clearFailure`.
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            loaders: {
+                base: async () => ({ title: 'Cart' }),
+                tenant: async () => {
+                    throw new Error('tenant service down');
+                }
+            },
+            onLoadError: vi.fn()
+        });
+
+        await store.ensureNamespace('cart');
+        await flush();
+        expect(store.loadError).toMatchObject({ namespace: 'cart' });
+
+        store.setLayer('tenant', { en: { cart: { title: 'Basket' } } });
+        expect(store.loadError).toBeNull();
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+
+        // …and retry() has nothing left to do rather than resurrecting it.
+        await store.retry();
+        await flush();
+        expect(store.loadError).toBeNull();
+    });
+});

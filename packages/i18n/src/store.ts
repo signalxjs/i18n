@@ -453,6 +453,11 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
                 keyGen.set(key, (keyGen.get(key) ?? 0) + 1);
                 loaded.delete(key);
                 inflight.delete(key);
+                // Clear the failure too, or `loadError` stays stuck forever: the
+                // caller has just SUPPLIED this layer's contents, and `retry()`
+                // could not clear it either — `writeLayer` marks the pair loaded,
+                // so `loadOne` short-circuits before reaching `clearFailure`.
+                clearFailure(key);
             }
 
             const previous = layerTrees[layer];
@@ -488,9 +493,9 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
          * invalidates everything.
          *
          * Stale-while-revalidate: the old catalogs stay in `messages` until the
-         * refetch lands (`mergeCatalog` replaces a pair wholesale), so the UI
-         * never flashes raw keys. No-op without a `load`, since nothing could
-         * bring back what was dropped.
+         * refetch lands (`writeLayer` recomposes a pair wholesale), so the UI
+         * never flashes raw keys. No-op when no layer has a loader, since
+         * nothing could bring back what was dropped.
          */
         async invalidate(locale?: string, ns?: string, layer?: string): Promise<void> {
             if (!hasAnyLoader) return;
