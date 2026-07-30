@@ -30,12 +30,10 @@ import { BASE_LAYER, composeAt, type LayeredMessages } from './layers.js';
 import { lightweightFormatter } from './formatter.js';
 import { resolveRequestLocale, type DetectionOptions, type RequestLike } from './detect.js';
 import {
-    createDynamicTranslator,
-    createTranslator,
-    type DynamicTranslator,
+    bindLocale,
+    type BoundTranslator,
     type KnownNamespace,
-    type TranslationSource,
-    type TypedTranslator
+    type TranslationSource
 } from './translator.js';
 import type {
     Catalog,
@@ -95,25 +93,11 @@ export interface ServerTranslateOptions extends TranslateOptions {
 
 /**
  * A translator bound to one locale — what `createServerT().forLocale()` and a
- * bound request BOTH produce. Binding a namespace on top of it is what yields
- * the typed proxy, mirroring the client exactly:
- *
- * | | client | server |
- * |---|---|---|
- * | typed, namespace-bound | `useTranslation(ns)` | `.forNamespace(ns)` |
- * | open-key, namespace-bound | `useDynamicTranslation(ns)` | `.dynamic(ns)` |
+ * bound request BOTH produce. It is the very {@link BoundTranslator} the client
+ * store's `forLocale()` hands back, plus the server-only {@link
+ * LocaleTranslator.withLayers}.
  */
-export interface LocaleTranslator {
-    /** The locale this translator is bound to. */
-    readonly locale: string;
-    /** Open-key call. Keys are `string` because no namespace is statically bound. */
-    t(key: string, params?: Params, options?: Omit<ServerTranslateOptions, 'locale'>): string;
-    /** Does the key resolve? No `onMissing`, no dev warning. */
-    exists(key: string, options?: { namespace?: KnownNamespace }): boolean;
-    /** Bind a namespace → the typed proxy (`m.subject()`, `m('subject')`, `` `${m.subject}` ``). */
-    forNamespace<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): TypedTranslator<NS>;
-    /** Bind a namespace → open keys, with a call-site `default` and `exists`. */
-    dynamic<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): DynamicTranslator;
+export interface LocaleTranslator extends BoundTranslator {
     /**
      * Layer extra catalogs on top, returning a new translator — the per-request
      * form. `createRequestT` builds once outside the request and the request only
@@ -229,13 +213,7 @@ export function createServerT(options: ServerI18nOptions): ServerTranslator {
     const bind = (layered: LayeredMessages, tree: MessageTree, locale: string): LocaleTranslator => {
         const source = sourceFor(tree, locale);
         return {
-            locale,
-            t: (key, params, opts) =>
-                source.translateKey(opts?.namespace ?? defaultNamespace, key, params, opts),
-            exists: (key, opts) => source.hasKey(opts?.namespace ?? defaultNamespace, key),
-            forNamespace: <NS extends KnownNamespace = KnownNamespace>(namespace?: NS) =>
-                createTranslator(source, namespace ?? defaultNamespace) as unknown as TypedTranslator<NS>,
-            dynamic: (namespace?: string) => createDynamicTranslator(source, namespace ?? defaultNamespace),
+            ...bindLocale(source, locale, defaultNamespace),
             withLayers: extra => {
                 // A fresh stack; the receiver keeps its own, so one translator
                 // serves many tenants without them leaking into each other.

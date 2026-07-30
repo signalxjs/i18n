@@ -211,3 +211,64 @@ export function createDynamicTranslator(source: TranslationSource, namespace: st
     t.exists = (key: string): boolean => source.hasKey(namespace, key);
     return t;
 }
+
+// ── A translator bound to one locale ─────────────────────────────────────────
+
+/** Per-call namespace override for a locale-bound translator's open-key calls. */
+export interface BoundTranslateOptions extends TranslateOptions {
+    namespace?: KnownNamespace;
+}
+
+/**
+ * A translator pinned to one locale. Both entries produce exactly this:
+ * `createServerT().forLocale(l)` on the server, `useI18n().forLocale(l)` on the
+ * client — so a preview pane and a mail template are the same three lines.
+ * Binding a namespace on top of it is what yields the typed proxy:
+ *
+ * | | client | server |
+ * |---|---|---|
+ * | typed, namespace-bound | `forNamespace(ns)` / `useTranslation(ns, { locale })` | `forNamespace(ns)` |
+ * | open-key, namespace-bound | `dynamic(ns)` / `useDynamicTranslation(ns, { locale })` | `dynamic(ns)` |
+ */
+export interface BoundTranslator {
+    /** The locale this translator is bound to. */
+    readonly locale: string;
+    /** Open-key call. Keys are `string` because no namespace is statically bound. */
+    t(key: string, params?: Params, options?: BoundTranslateOptions): string;
+    /** Does the key resolve? No `onMissing`, no dev warning. */
+    exists(key: string, options?: { namespace?: KnownNamespace }): boolean;
+    /** Bind a namespace → the typed proxy (`m.subject()`, `m('subject')`, `` `${m.subject}` ``). */
+    forNamespace<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): TypedTranslator<NS>;
+    /** Bind a namespace → open keys, with a call-site `default` and `exists`. */
+    dynamic<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): DynamicTranslator;
+}
+
+/**
+ * Build a {@link BoundTranslator} over an already locale-bound {@link TranslationSource}.
+ * Shared by `createServerT` and the reactive store, so the two surfaces cannot drift.
+ *
+ * `onUse` is the client's seam: it receives the resolved namespace of every call,
+ * which is how a pinned translator kicks off the catalog load for *its* locale.
+ * The server has no loading and passes nothing.
+ */
+export function bindLocale(
+    source: TranslationSource,
+    locale: string,
+    defaultNamespace: string,
+    onUse?: (namespace: string) => void
+): BoundTranslator {
+    const resolveNs = (namespace: string | undefined): string => {
+        const ns = namespace ?? defaultNamespace;
+        onUse?.(ns);
+        return ns;
+    };
+    return {
+        locale,
+        t: (key, params, options) =>
+            source.translateKey(resolveNs(options?.namespace), key, params, options),
+        exists: (key, options) => source.hasKey(resolveNs(options?.namespace), key),
+        forNamespace: <NS extends KnownNamespace = KnownNamespace>(namespace?: NS) =>
+            createTranslator(source, resolveNs(namespace)) as unknown as TypedTranslator<NS>,
+        dynamic: (namespace?: string) => createDynamicTranslator(source, resolveNs(namespace))
+    };
+}

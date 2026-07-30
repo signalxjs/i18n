@@ -7,6 +7,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Translate into a locale other than the active one** (#32) — the client half of
+  the server's `forLocale`. A preview pane, a list whose rows each carry their own
+  locale, or composing a message in the recipient's language no longer needs
+  `setLocale('sv')` → read → `setLocale('en')`, which repaints the whole app, fires
+  `localeChanged` twice, and — being async — cannot serve a synchronous render at
+  all.
+
+  ```tsx
+  const tSv = useTranslation('cart', { locale: 'sv' });   // pinned; app stays on 'en'
+  const dyn = useDynamicTranslation('content', { locale: 'sv' });
+  <T k="cart.title" locale={row.locale} />
+  ```
+
+  A pinned translator reads `messages` reactively — so it repaints when **its**
+  catalog lands — and never reads the active locale, so `setLocale` leaves it
+  alone. Keys stay typed, `locale` is checked like `setLocale`'s, and the locale
+  chain applies from where it was pinned (`sv-FI` → `sv` → master).
+
+  It is literally the server's surface: `store.forLocale('sv')` returns the same
+  `BoundTranslator` (`t` / `exists` / `forNamespace` / `dynamic`) that
+  `createServerT().forLocale('sv')` does — one shared `bindLocale` factory now
+  builds both, so they cannot drift.
+
+  The loading half is public too: `store.ensureNamespace(ns, locale)` takes a
+  locale (defaulting to the active one) and dedupes per `(namespace, locale)`, so a
+  namespace already loaded for `en` still fetches when a preview asks for it in
+  `sv`. `invalidate` and `retry` reach pinned pairs unchanged. Also additive:
+  `store.hasKey(ns, key, locale)` and `store.explain(ns, key, locale)`.
+
 - **Layered catalogs** (#30) — override **individual keys** of a catalog you don't
   own. A library ships defaults; a downstream app, or one per-tenant deployment of
   it, changes a handful of strings and everything else keeps coming from the layer

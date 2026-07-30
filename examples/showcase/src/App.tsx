@@ -67,6 +67,32 @@ const AppPanel = component(() => {
     );
 });
 
+/**
+ * A translator pinned to a locale that is NOT the active one. The `sv` catalog
+ * is fetched for this pane alone — no `setLocale`, no second store — and the
+ * pane is deliberately inert when you toggle EN/SV in the header: it repaints
+ * only when *its own* catalog lands.
+ */
+const PreviewPanel = component(() => {
+    const t = useTranslation('marketing/home');
+    const sv = useTranslation('marketing/home', { locale: 'sv' });
+    return () => (
+        <section class="card">
+            <h2>side-by-side preview</h2>
+            <p class="muted">active locale</p>
+            <strong>{t.title()}</strong>
+            <p>{t.users({ count: 1337 })}</p>
+            <p class="muted">pinned to sv</p>
+            <strong>{sv.title()}</strong>
+            <p>{sv.users({ count: 1337 })}</p>
+            <p class="muted">
+                Switch EN/SV above: only the top half moves. <code>sv</code> loaded once, for
+                this pane, without the app ever leaving its locale.
+            </p>
+        </section>
+    );
+});
+
 export const App = component(() => {
     const showApp = signal(false);
     return () => (
@@ -88,6 +114,7 @@ export const App = component(() => {
                         <button onClick={() => (showApp.value = true)}>Reveal app section</button>
                     </section>
                 )}
+                <PreviewPanel />
             </div>
         </>
     );
