@@ -180,3 +180,60 @@ describe('flatten still behaves as manifest.ts expects', () => {
         expect([...flat.keys()].sort()).toEqual(['a.b', 'cart.items', 'cart.title']);
     });
 });
+
+describe('composeCatalogs — hostile keys from a database override', () => {
+    // Override catalogs routinely come from a DB, so `__proto__` is reachable by
+    // untrusted input. On a plain `{}` target, `merged['__proto__'] = {…}` sets
+    // the PROTOTYPE rather than an own key — and `getMessage` reads
+    // `catalog[key]`, which walks the chain, so an override could inject values
+    // for keys no layer legitimately supplies.
+    // The payload has to be PLURAL-SHAPED to be dangerous, which is not obvious.
+    // `flatten` recurses into a plain nested object, so `{"__proto__":{"title":…}}`
+    // becomes the harmless dotted key `__proto__.title`. But `isPluralForms`
+    // treats `{one,other,…}` as a LEAF, so that value is assigned straight to
+    // `merged['__proto__']` — which on a plain `{}` sets the prototype, and
+    // `getMessage` reads `catalog[key]`, walking the chain.
+    it('cannot inject keys it does not own via a plural-shaped __proto__', () => {
+        const base: Catalog = { greeting: 'Hello' };
+        const hostile = JSON.parse('{"__proto__": {"other": "PWNED", "one": "PWNED"}}') as Catalog;
+        const merged = composeCatalogs([base, hostile]);
+
+        // `one`/`other` are supplied by NO layer as top-level keys.
+        expect(getMessage(merged, 'other')).toBeUndefined();
+        expect(getMessage(merged, 'one')).toBeUndefined();
+        expect(getMessage(merged, 'greeting')).toBe('Hello');
+    });
+
+    it('does not leak into other objects or Object.prototype', () => {
+        const hostile = JSON.parse('{"__proto__": {"other": "leaked"}}') as Catalog;
+        composeCatalogs([{ a: 'A' }, hostile]);
+        expect(({} as Record<string, unknown>).other).toBeUndefined();
+        expect((Object.prototype as unknown as Record<string, unknown>).other).toBeUndefined();
+    });
+
+    it('keeps a nested __proto__ group as an ordinary dotted key', () => {
+        // The non-plural case, for completeness: it flattens rather than assigning.
+        const hostile = JSON.parse('{"__proto__": {"title": "PWNED"}}') as Catalog;
+        const merged = composeCatalogs([{ a: 'A' }, hostile]);
+        expect(getMessage(merged, 'title')).toBeUndefined();
+        expect(getMessage(merged, '__proto__.title')).toBe('PWNED');
+    });
+
+    it('treats a message literally named __proto__ as an ordinary key', () => {
+        // Built via JSON.parse on purpose: `{ __proto__: x }` as an object
+        // LITERAL is JS's prototype-setter syntax and creates no own property,
+        // so it could not reach the composer at all. A DB row or a parsed JSON
+        // catalog — the actual source of overrides — does create one.
+        const named = JSON.parse('{"__proto__": "a real message"}') as Catalog;
+        const merged = composeCatalogs([{ a: 'A' }, named]);
+        expect(getMessage(merged, '__proto__')).toBe('a real message');
+        expect(getMessage(merged, 'a')).toBe('A');
+    });
+
+    it('is not confused by constructor / toString as message keys', () => {
+        const merged = composeCatalogs([{ constructor: 'Ctor', toString: 'Str' }, { valueOf: 'Val' }]);
+        expect(getMessage(merged, 'constructor')).toBe('Ctor');
+        expect(getMessage(merged, 'toString')).toBe('Str');
+        expect(getMessage(merged, 'valueOf')).toBe('Val');
+    });
+});

@@ -237,6 +237,36 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     if (config.load && !loaders[defaultLayer]) loaders[defaultLayer] = config.load;
     const hasAnyLoader = layerOrder.some(layer => loaders[layer]);
 
+    // Only `layerOrder` is ever consulted by `composeAt`, so a name outside it
+    // writes to a tree nothing reads — the consumer sees no error and no effect.
+    // These are the assumptions the key space and the composer rest on; warn
+    // rather than let them fail silently.
+    if (__DEV__) {
+        for (const layer of layerOrder) {
+            if (layer.includes(' ')) {
+                console.warn(
+                    `[@sigx/i18n] layer name "${layer}" contains a space. Load keys are ` +
+                        `"<layer> <locale> <namespace>", so invalidate() and setLayer() will misbehave.`
+                );
+            }
+        }
+        if (!layerOrder.includes(defaultLayer)) {
+            console.warn(
+                `[@sigx/i18n] defaultLayer "${defaultLayer}" is not in layers ` +
+                    `[${layerOrder.join(', ')}], so \`load\` and \`addMessages\` would write to a ` +
+                    `layer nothing resolves from.`
+            );
+        }
+        for (const layer of Object.keys(config.loaders ?? {})) {
+            if (!layerOrder.includes(layer)) {
+                console.warn(
+                    `[@sigx/i18n] loaders["${layer}"] names a layer not in ` +
+                        `[${layerOrder.join(', ')}] — it will never be consulted.`
+                );
+            }
+        }
+    }
+
     /** Recompose the effective catalog for one pair. Single-layer returns by identity. */
     function recompose(locale: string, ns: string): void {
         const effective = composeAt(layerTrees, layerOrder, locale, ns);
@@ -407,6 +437,12 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
          * ```
          */
         setLayer(layer: string, tree: MessageTree): void {
+            if (__DEV__ && !layerOrder.includes(layer)) {
+                console.warn(
+                    `[@sigx/i18n] setLayer("${layer}") names a layer not in ` +
+                        `[${layerOrder.join(', ')}] — the tree is stored but never resolved from.`
+                );
+            }
             // Supersede this layer's in-flight loads FIRST. A request already
             // running would otherwise resolve after the swap and call
             // `writeLayer` with what it fetched, quietly reinstating the tree

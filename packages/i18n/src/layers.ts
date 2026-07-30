@@ -114,7 +114,15 @@ export function composeCatalogs(catalogs: readonly Catalog[]): Catalog {
     // Flat dotted keys throughout: `getMessage` tries a flat property before
     // walking nested groups, so the composed catalog resolves identically while
     // being trivial to merge.
-    const merged: Catalog = {};
+    //
+    // NULL PROTOTYPE, deliberately. Override catalogs routinely come from a
+    // database, so a key named `__proto__` is reachable by untrusted input. On a
+    // plain `{}`, `merged['__proto__'] = {…}` sets the prototype instead of an
+    // own property — and since `getMessage` reads `catalog[key]`, which walks the
+    // chain, an override could inject values for keys no layer legitimately
+    // supplies. A null-prototype object makes `__proto__` an ordinary key, which
+    // is both safe and the correct behaviour for a message named that.
+    const merged: Catalog = Object.create(null) as Catalog;
     for (const catalog of catalogs) {
         for (const [key, value] of flatOf(catalog)) merged[key] = value;
     }

@@ -611,3 +611,52 @@ describe('store — setLayer supersedes in-flight loads', () => {
         expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
     });
 });
+
+describe('store — layer misconfiguration is loud, not silent', () => {
+    // Only `layers` is consulted when resolving, so a name outside it writes to a
+    // tree nothing reads: no error, no effect. These are the assumptions the key
+    // space and the composer rest on, so they warn rather than fail quietly.
+    const spyWarn = () => {
+        const w = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        w.mockClear();
+        return w;
+    };
+
+    it('warns when defaultLayer is not one of the declared layers', () => {
+        const warn = spyWarn();
+        setup({ fallbackLocale: 'en', layers: ['base', 'tenant'], defaultLayer: 'typo' });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('defaultLayer "typo" is not in layers'));
+        warn.mockRestore();
+    });
+
+    it('warns when a layer name contains a space, which the load key cannot survive', () => {
+        const warn = spyWarn();
+        setup({ fallbackLocale: 'en', layers: ['base', 'my tenant'] });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('contains a space'));
+        warn.mockRestore();
+    });
+
+    it('warns when a loader names a layer that will never be consulted', () => {
+        const warn = spyWarn();
+        setup({ fallbackLocale: 'en', layers: ['base'], loaders: { ghost: async () => ({}) } });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('loaders["ghost"]'));
+        warn.mockRestore();
+    });
+
+    it('warns when setLayer names an undeclared layer', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        warn.mockClear();
+        store.setLayer('nope', { en: { cart: { title: 'X' } } });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('setLayer("nope")'));
+        warn.mockRestore();
+    });
+
+    it('stays quiet for a correct configuration', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'], defaultLayer: 'base' });
+        store.setLayer('tenant', { en: { cart: { title: 'Basket' } } });
+        expect(warn).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+});
