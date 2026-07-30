@@ -6,10 +6,14 @@ export default defineConfig({
     define: {
         __DEV__: 'true'
     },
+    // Same JSX factory the library is built with — renderer-neutral, never the
+    // `sigx` umbrella (issue #47). Tests that need the DOM renderer get it by
+    // importing `defineApp` from `sigx`, which registers the DOM platform;
+    // `jsx()` itself is runtime-core's either way.
     oxc: {
         jsx: {
             runtime: 'automatic',
-            importSource: 'sigx'
+            importSource: '@sigx/runtime-core'
         }
     },
     test: {

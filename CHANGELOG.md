@@ -6,6 +6,44 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **The core entry no longer reaches for the `sigx` umbrella** (#47) — `@sigx/i18n`
+  could not be imported at all from a non-DOM renderer. `sigx` is the DOM
+  meta-package (its entry is `import '@sigx/runtime-dom/platform'`, and
+  `@sigx/runtime-dom` declares `global { namespace JSX { IntrinsicElements … } }`),
+  so a single import of `@sigx/i18n` typed **every** JSX element in the consuming
+  app against the DOM intrinsics. In a lynx app that turned unrelated, previously
+  fine components into type errors (`Property 'bindinput' does not exist on type
+  'InputHTMLAttributes<HTMLInputElement>'`). It was also a runtime bug, not only a
+  typing one: `dist/index.js` imported `sigx/jsx-runtime`, so `<T>` was built with
+  the DOM JSX factory rather than the host renderer's — which fails silently
+  instead of at the typecheck.
+
+  Three spellings carried it in, all now renderer-neutral:
+  `component.tsx` imported `component`/`Define` from `sigx` (→ `@sigx/runtime-core`);
+  the package's `jsxImportSource` was `sigx` (→ `@sigx/runtime-core`); and
+  `vite.config.ts` inherited `defineLibConfig`'s `importSource: 'sigx'` default
+  (→ set explicitly). With `sigx` out of the program, the declaration emitter also
+  stops routing inferred types through it — `InjectableFunction` now resolves to
+  `@sigx/runtime-core`, `Computed` to `@sigx/reactivity`.
+
+  No API change: `<T>`, the accessor and the store are untouched, and DOM apps
+  behave exactly as before.
+
+### Changed
+- `sigx` is no longer listed in `peerDependencies` / `peerDependenciesMeta` (#47).
+  It was already `optional` there; now nothing in the published package imports it,
+  so the declaration was misleading. It stays a devDependency for the DOM tests.
+  Nothing to do on upgrade — an optional peer that was satisfied still is.
+
+### Added
+- `edge-clean.test.ts` guards the above (#47): the core entry's source graph must
+  contain no bare `sigx` specifier, and both JSX-factory settings are asserted —
+  the compiler-injected `jsx()` import is invisible to a source walk, so the
+  umbrella could otherwise come back through configuration alone. `verify:pack`
+  now installs the renderer-neutral tier **without** `sigx`, so the published
+  tarball's import smoke fails to resolve if the umbrella ever returns.
+
 ## [0.3.0] - 2026-07-30
 
 Pre-1.0, so the **breaking server-entry change below lands in a minor**. If you
