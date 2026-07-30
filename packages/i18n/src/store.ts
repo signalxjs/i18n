@@ -43,7 +43,19 @@ export type LocaleLoader = (locale: string, namespace: string) => Promise<Catalo
  * `useTranslation(ns, { locale })`; this is the primitive underneath them.
  */
 export interface StoreTranslateOptions extends TranslateOptions {
-    /** Resolve in this locale instead of the active one. Its chain still applies. */
+    /**
+     * Resolve in this locale instead of the active one. Its chain still applies.
+     *
+     * Deliberately `string`, not `KnownLocale` — the same call the server's
+     * {@link ServerTranslateOptions.locale} makes, for the same reason. The
+     * narrowed spellings are the ones written as a literal in source, next to
+     * `setLocale('sv')`: `useTranslation(ns, { locale })` and `forLocale()`.
+     * This one is the primitive they are built on, and it is also what a *data*
+     * locale flows through — a ticket's `row.locale`, a recipient's stored
+     * preference, `<T locale={…}>`. Those are `string` at the type level however
+     * carefully they were produced, so narrowing here would put a cast on the
+     * per-row case that is half the reason this feature exists.
+     */
     locale?: string;
 }
 
