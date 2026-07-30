@@ -1,7 +1,7 @@
 /** Tests for the reactive @sigx/i18n store (via a real app DI context). */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { defineApp, jsx } from '@sigx/runtime-core';
-import { effect } from '@sigx/reactivity';
+import { effect, toRaw } from '@sigx/reactivity';
 import { useI18n, useI18nConfig, type I18nRuntimeConfig } from '../src/store.js';
 
 // These tests exercise core store logic in isolation: detection and persistence
@@ -419,5 +419,349 @@ describe('store — surfaced load failures', () => {
         const after = load.mock.calls.length;
         await store.retry();
         expect(load.mock.calls.length).toBe(after + 1);
+    });
+});
+
+describe('store — layered catalogs', () => {
+    /** A base catalog with several keys, so "override one, keep the rest" is meaningful. */
+    const base = { title: 'Cart', empty: 'Nothing here', checkout: 'Checkout', help: 'Need help?' };
+
+    it('overrides individual keys and leaves the rest of the base intact', () => {
+        // The bug #30 is about: a second registration used to WIPE the other keys.
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        store.addMessages('en', 'cart', base);
+        store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'tenant' });
+
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
+        expect(store.translateKey('cart', 'checkout')).toBe('Checkout');
+        expect(store.translateKey('cart', 'help')).toBe('Need help?');
+    });
+
+    it('is order-independent — override first, then base, gives the same result', () => {
+        // Previously whichever source registered first marked the pair loaded and
+        // silently suppressed the other, so the winner depended on async timing.
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'tenant' });
+        store.addMessages('en', 'cart', base);
+
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
+    });
+
+    it('seeds whole layers from config — the bulk form', () => {
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            initialMessages: { en: { cart: base } },
+            layerMessages: { tenant: { en: { cart: { title: 'Basket' } } } }
+        });
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
+    });
+
+    it('setLayer swaps a whole layer, and dropping a key falls back to the layer below', () => {
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        store.addMessages('en', 'cart', base);
+        store.setLayer('tenant', { en: { cart: { title: 'Basket', empty: 'All clear' } } });
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        expect(store.translateKey('cart', 'empty')).toBe('All clear');
+
+        // A narrower override: `empty` is gone, so the base shows through again.
+        store.setLayer('tenant', { en: { cart: { title: 'Trolley' } } });
+        expect(store.translateKey('cart', 'title')).toBe('Trolley');
+        expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
+
+        // Emptying the layer entirely restores the base for every key.
+        store.setLayer('tenant', {});
+        expect(store.translateKey('cart', 'title')).toBe('Cart');
+    });
+
+    it('applies layers WITHIN a locale, so the locale chain still wins', async () => {
+        // Precedence: locale outer, layer inner. A base message in the requested
+        // locale beats a tenant override that exists only in a fallback locale —
+        // otherwise a partly-translated override drags text back to the master.
+        const { store } = setup({ fallbackLocale: 'en', supported: ['en', 'sv'], layers: ['base', 'tenant'] });
+        store.addMessages('en', 'cart', { title: 'Cart' });
+        store.addMessages('sv', 'cart', { title: 'Kundvagn' });
+        store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'tenant' });
+
+        await store.setLocale('sv');
+        expect(store.translateKey('cart', 'title')).toBe('Kundvagn'); // sv base, not en tenant
+
+        // …but a tenant override in the ACTIVE locale does win.
+        store.addMessages('sv', 'cart', { title: 'Korgen' }, { layer: 'tenant' });
+        expect(store.translateKey('cart', 'title')).toBe('Korgen');
+    });
+
+    it('loads each layer independently, so neither suppresses the other', async () => {
+        const seen: string[] = [];
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            loaders: {
+                base: async (_l, ns) => {
+                    seen.push(`base:${ns}`);
+                    return base;
+                },
+                tenant: async (_l, ns) => {
+                    seen.push(`tenant:${ns}`);
+                    return { title: 'Basket' };
+                }
+            }
+        });
+        await store.ensureNamespace('cart');
+        await flush();
+
+        expect(seen.sort()).toEqual(['base:cart', 'tenant:cart']);
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
+    });
+
+    it('invalidate can be narrowed to one layer', async () => {
+        const calls: string[] = [];
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            loaders: {
+                base: async () => {
+                    calls.push('base');
+                    return base;
+                },
+                tenant: async () => {
+                    calls.push('tenant');
+                    return { title: 'Basket' };
+                }
+            }
+        });
+        await store.ensureNamespace('cart');
+        await flush();
+        calls.length = 0;
+
+        await store.invalidate('en', 'cart', 'tenant');
+        expect(calls).toEqual(['tenant']); // the base was not refetched
+    });
+
+    it('explain reports which (layer, locale) supplied a message', async () => {
+        const { store } = setup({ fallbackLocale: 'en', supported: ['en', 'sv'], layers: ['base', 'tenant'] });
+        store.addMessages('en', 'cart', base);
+        store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'tenant' });
+
+        expect(store.explain('cart', 'title')).toEqual({ layer: 'tenant', locale: 'en' });
+        expect(store.explain('cart', 'empty')).toEqual({ layer: 'base', locale: 'en' });
+        expect(store.explain('cart', 'nope')).toBeNull();
+
+        // Through the locale chain: sv has nothing, so it resolves in en.
+        await store.setLocale('sv');
+        expect(store.explain('cart', 'title')).toEqual({ layer: 'tenant', locale: 'en' });
+    });
+
+    it('costs nothing when no layers are declared — the catalog passes through by identity', () => {
+        const { store } = setup({ fallbackLocale: 'en' });
+        const catalog = { cart: { title: 'Cart' } };
+        store.addMessages('en', 'shop', catalog);
+        // Single layer ⇒ no compose, no copy. `state.messages` is a deep reactive
+        // proxy, so unwrap it to compare identity rather than the wrapper.
+        expect(toRaw(store.messages.en.shop)).toBe(catalog);
+        // The observable consequence: the nested shape survives untouched,
+        // where a composed catalog would be flattened to dotted keys.
+        expect(Object.keys(toRaw(store.messages.en.shop))).toEqual(['cart']);
+    });
+
+    it('is reactive when a layer changes', () => {
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        store.addMessages('en', 'cart', base);
+
+        const seen: string[] = [];
+        const stop = effect(() => seen.push(store.translateKey('cart', 'title')));
+        expect(seen).toEqual(['Cart']);
+
+        store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'tenant' });
+        expect(seen).toEqual(['Cart', 'Basket']);
+        stop.stop();
+    });
+});
+
+describe('store — setLayer supersedes in-flight loads', () => {
+    it('drops a load that resolves after the layer was swapped', async () => {
+        // Without a generation bump the orphaned request lands `writeLayer` and
+        // quietly reinstates the tree that setLayer had just replaced — the same
+        // race `invalidate` guards against.
+        let release!: (c: Record<string, string>) => void;
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            loaders: {
+                base: async () => ({ title: 'Cart', empty: 'Nothing here' }),
+                tenant: () => new Promise(r => (release = r))
+            }
+        });
+
+        const pending = store.ensureNamespace('cart');
+        await flush(); // the loaders are invoked inside the promise chain
+
+        store.setLayer('tenant', { en: { cart: { title: 'Trolley' } } });
+        expect(store.translateKey('cart', 'title')).toBe('Trolley');
+
+        release({ title: 'STALE' }); // the superseded request finally answers
+        await pending;
+        await flush();
+
+        expect(store.translateKey('cart', 'title')).toBe('Trolley');
+        expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
+    });
+});
+
+describe('store — layer misconfiguration is loud, not silent', () => {
+    // Only `layers` is consulted when resolving, so a name outside it writes to a
+    // tree nothing reads: no error, no effect. These are the assumptions the key
+    // space and the composer rest on, so they warn rather than fail quietly.
+    const spyWarn = () => {
+        const w = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        w.mockClear();
+        return w;
+    };
+
+    const notInLayers = (layer: string) => expect.stringContaining(`names layer "${layer}", which is not in`);
+
+    it('warns when defaultLayer is not one of the declared layers', () => {
+        const warn = spyWarn();
+        setup({ fallbackLocale: 'en', layers: ['base', 'tenant'], defaultLayer: 'typo' });
+        expect(warn).toHaveBeenCalledWith(notInLayers('typo'));
+        warn.mockRestore();
+    });
+
+    it('warns when a loader names a layer that will never be consulted', () => {
+        const warn = spyWarn();
+        setup({ fallbackLocale: 'en', layers: ['base'], loaders: { ghost: async () => ({}) } });
+        expect(warn).toHaveBeenCalledWith(notInLayers('ghost'));
+        warn.mockRestore();
+    });
+
+    it('warns when setLayer names an undeclared layer', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        warn.mockClear();
+        store.setLayer('nope', { en: { cart: { title: 'X' } } });
+        expect(warn).toHaveBeenCalledWith(notInLayers('nope'));
+        warn.mockRestore();
+    });
+
+    // Every layer write funnels through `writeLayer`, so these are covered by the
+    // one guard rather than by a check remembered at each call site.
+    it('warns when addMessages names an undeclared layer', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        warn.mockClear();
+        store.addMessages('en', 'cart', { title: 'X' }, { layer: 'typo' });
+        expect(warn).toHaveBeenCalledWith(notInLayers('typo'));
+        warn.mockRestore();
+    });
+
+    it('warns when layerMessages names an undeclared layer', () => {
+        const warn = spyWarn();
+        setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            layerMessages: { tenannt: { en: { cart: { title: 'X' } } } } // typo
+        });
+        expect(warn).toHaveBeenCalledWith(notInLayers('tenannt'));
+        warn.mockRestore();
+    });
+
+    // The load key is NUL-delimited, so a space in a layer name — or in a
+    // namespace, which comes from a file path — is simply not a hazard any more.
+    // Nothing to warn about; it has to WORK.
+    it('handles a layer name containing a space', async () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'my tenant'] });
+        store.addMessages('en', 'cart', { title: 'Cart', empty: 'Empty' });
+        store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'my tenant' });
+
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        expect(store.translateKey('cart', 'empty')).toBe('Empty');
+        expect(store.explain('cart', 'title')).toEqual({ layer: 'my tenant', locale: 'en' });
+        expect(warn).not.toHaveBeenCalled();
+
+        // …and the key round-trips through invalidate's parse.
+        await store.invalidate('en', 'cart', 'my tenant');
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        warn.mockRestore();
+    });
+
+    it('handles a namespace containing a space', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        store.addMessages('en', 'my ns', { title: 'Cart' });
+        store.addMessages('en', 'my ns', { title: 'Basket' }, { layer: 'tenant' });
+        expect(store.translateKey('my ns', 'title')).toBe('Basket');
+        expect(warn).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+
+    it('stays quiet for a correct configuration', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'], defaultLayer: 'base' });
+        store.setLayer('tenant', { en: { cart: { title: 'Basket' } } });
+        expect(warn).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+});
+
+describe('store — setLayer clears a stuck error state', () => {
+    it('clears the failure for the layer it replaces', async () => {
+        // Without this, `loadError` stayed set forever: the caller has supplied
+        // the layer's contents, and `retry()` could not clear it either because
+        // `writeLayer` marks the pair loaded, so `loadOne` short-circuits before
+        // reaching `clearFailure`.
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            loaders: {
+                base: async () => ({ title: 'Cart' }),
+                tenant: async () => {
+                    throw new Error('tenant service down');
+                }
+            },
+            onLoadError: vi.fn()
+        });
+
+        await store.ensureNamespace('cart');
+        await flush();
+        expect(store.loadError).toMatchObject({ namespace: 'cart' });
+
+        store.setLayer('tenant', { en: { cart: { title: 'Basket' } } });
+        expect(store.loadError).toBeNull();
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+
+        // …and retry() has nothing left to do rather than resurrecting it.
+        await store.retry();
+        await flush();
+        expect(store.loadError).toBeNull();
+    });
+});
+
+describe('store — loads stay inside the declared layers', () => {
+    it('never drives a loader for a layer that is not declared', async () => {
+        // invalidate()/retry() derive layers from the internal key sets, not from
+        // `layers`, so a catalog written to an undeclared layer could otherwise
+        // cause a fetch for a layer nothing resolves from.
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const ghost = vi.fn(async () => ({ title: 'Ghost' }));
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base'],
+            loaders: { base: async () => ({ title: 'Cart' }), ghost }
+        });
+        await store.ensureNamespace('cart');
+        await flush();
+
+        store.addMessages('en', 'cart', { title: 'X' }, { layer: 'ghost' });
+        await store.invalidate();
+        await flush();
+
+        expect(ghost).not.toHaveBeenCalled();
+        expect(store.translateKey('cart', 'title')).toBe('Cart');
+        warn.mockRestore();
     });
 });

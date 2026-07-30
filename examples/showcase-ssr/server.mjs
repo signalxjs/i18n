@@ -30,13 +30,23 @@ async function mailRoute(req, res) {
     const t = createServerT({
         catalogs: await loadCatalogs(localesDir),
         fallbackLocale: 'en',
-        defaultNamespace: 'mail'
+        defaultNamespace: 'mail',
+        layers: ['base', 'tenant']
     });
     const locale = typeof req.query.lang === 'string' ? req.query.lang : 'en';
+    // A white-label override, as a per-request layer. In a real app this comes
+    // from a database keyed by tenant; here `?tenant=acme` stands in. Only
+    // `subject` is overridden — every other key still falls through to the base,
+    // including `ps`, which exists in en only and so also crosses the locale
+    // fallback. Composition is cached globally by catalog identity, so serving
+    // this tenant again does not re-merge.
+    const tenants = { acme: { en: { mail: { subject: 'Welcome to Acme' } } } };
+    const tenant = tenants[req.query.tenant];
     // Bind locale, then namespace — the result is the same proxy translator the
     // client gets from `useTranslation`, so `${m.subject}` coerces and
     // `m.welcome({ name })` interpolates, exactly as in a component.
-    const m = t.forLocale(locale).forNamespace('mail');
+    const bound = t.forLocale(locale);
+    const m = (tenant ? bound.withLayers({ tenant }) : bound).forNamespace('mail');
     const name = 'Ada';
     res.type('html').send(
         `<!doctype html><meta charset="utf-8"><title>${m.subject}</title>` +

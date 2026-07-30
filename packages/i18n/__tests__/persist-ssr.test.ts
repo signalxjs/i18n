@@ -109,7 +109,13 @@ describe('SSR state transfer', () => {
 
         const first = setup(base());
         await first.whenReady;
-        first.addMessages('de', { common: { hi: 'Servus' } });
+        // `addMessages` is (locale, ns, catalog). This call previously passed the
+        // catalog where `ns` belongs and omitted the third argument, writing
+        // `tree.de['[object Object]'] = undefined` — so the assertion below held
+        // vacuously and proved nothing about copy isolation. `__tests__` is
+        // outside the root tsconfig include, so the arity error was never caught.
+        first.addMessages('de', 'common', { hi: 'Servus' });
+        expect(first.translateKey('common', 'hi')).toBe('Servus');
 
         const second = setup(base());
         await second.whenReady;
@@ -193,5 +199,29 @@ describe('no cross-request leak', () => {
         expect(b.locale).toBe('en'); // unaffected
         expect(a.translateKey('c', 'x')).toBe('A');
         expect(b.translateKey('c', 'x')).toBe('x'); // b never got the catalog
+    });
+});
+
+describe('SSR transfer + layers', () => {
+    it('seeds the transferred effective view as the base layer, and a client layer overrides it', async () => {
+        // The wire shape is unchanged — the server sends the ALREADY-LAYERED
+        // effective view, so the client needs no provenance to render it.
+        (window as unknown as { __SIGX_ASYNC__: Record<string, unknown> }).__SIGX_ASYNC__ = {
+            'store:i18n': { locale: 'de', messages: { de: { common: { hi: 'Hallo', bye: 'Tschüss' } } } }
+        };
+
+        const store = setup({ ...base(), layers: ['base', 'tenant'] });
+        await store.whenReady;
+        expect(store.ssrHydrated).toBe(true);
+        expect(store.translateKey('common', 'hi')).toBe('Hallo');
+
+        // A client-side layer lands on top of the hydrated view, per key.
+        store.addMessages('de', 'common', { hi: 'Servus' }, { layer: 'tenant' });
+        expect(store.translateKey('common', 'hi')).toBe('Servus');
+        expect(store.translateKey('common', 'bye')).toBe('Tschüss');
+
+        // Provenance for a server-resolved string collapses to the base layer.
+        expect(store.explain('common', 'bye')).toEqual({ layer: 'base', locale: 'de' });
+        expect(store.explain('common', 'hi')).toEqual({ layer: 'tenant', locale: 'de' });
     });
 });

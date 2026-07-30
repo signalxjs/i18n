@@ -11,7 +11,8 @@
 import { defineInjectable } from '@sigx/runtime-core';
 import { computed, signal } from '@sigx/reactivity';
 import { defineStore, type SetupStoreContext } from '@sigx/store';
-import { lookup, matchLocale, translateWith } from './translate.js';
+import { localeChain, lookup, matchLocale, translateWith } from './translate.js';
+import { BASE_LAYER, composeAt, layerFor, type LayeredMessages } from './layers.js';
 import { lightweightFormatter } from './formatter.js';
 import { createDetectors, detectLocale, type DetectionOptions } from './detect.js';
 import { installPersistSSR, type PersistSSROptions } from './persist-ssr.js';
@@ -57,6 +58,31 @@ export interface I18nRuntimeConfig {
     defaultNamespace?: string;
     /** Catalog loader; when absent, catalogs must be supplied via `addMessages`. */
     load?: LocaleLoader;
+    /**
+     * Ordered override layers, **lowest priority first**. Declaring them turns on
+     * per-KEY layering: an override layer supplies a handful of keys and every
+     * other key still falls through to the layer below, including keys the base
+     * gains in a later version.
+     *
+     * Layers compose *within* one locale, and the locale chain is walked after —
+     * so a `base` message in the requested locale beats a `tenant` override that
+     * exists only in a fallback locale. That keeps a message formatted in the
+     * locale it was found in, which plural selection depends on.
+     *
+     * Omit for the single-source behaviour; nothing is composed and nothing is
+     * allocated.
+     */
+    layers?: string[];
+    /** Where `load` / `addMessages` land when no layer is named. Default: the lowest layer. */
+    defaultLayer?: string;
+    /** Per-layer loaders. `load` is the loader for `defaultLayer`. */
+    loaders?: Record<string, LocaleLoader>;
+    /**
+     * Seed whole layers at creation — the bulk front door for overrides already
+     * in hand, e.g. one query that returns every namespace for a tenant.
+     * Shape: `layerMessages[layer][locale][namespace]`.
+     */
+    layerMessages?: LayeredMessages;
     /**
      * Catalogs to seed synchronously at creation (marked loaded, so no refetch).
      * The idiomatic SSR preload: load the request's catalogs, pass them here, and
@@ -133,12 +159,20 @@ function resolveConfig(): I18nRuntimeConfig {
     }
 }
 
-const loadKey = (l: string, ns: string) => `${l} ${ns}`;
-// Split on the FIRST space only: a BCP-47 locale never contains one, but a
-// namespace comes from a file path and might.
-const parseKey = (key: string): [locale: string, ns: string] => {
-    const i = key.indexOf(' ');
-    return [key.slice(0, i), key.slice(i + 1)];
+// A load is identified by (layer, locale, ns): the base catalog and an override
+// layer can each load the same pair without one silently suppressing the other.
+//
+// NUL as the delimiter, not a space. A namespace comes from a file path and a
+// layer name is chosen by the consumer, so either could contain a space — and a
+// space-delimited key would then decode to the wrong fields, breaking
+// `invalidate` and `setLayer`. NUL is unrepresentable in a filename on every
+// real filesystem and invalid in BCP-47, so the encoding is unambiguous by
+// construction rather than by a rule someone has to obey.
+const KEY_SEP = '\u0000';
+const loadKey = (layer: string, l: string, ns: string) => `${layer}${KEY_SEP}${l}${KEY_SEP}${ns}`;
+const parseKey = (key: string): [layer: string, locale: string, ns: string] => {
+    const parts = key.split(KEY_SEP);
+    return [parts[0], parts[1], parts.slice(2).join(KEY_SEP)];
 };
 
 /**
@@ -190,11 +224,95 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         if (failures.delete(key)) errorVersion.value++;
     }
 
-    function mergeCatalog(locale: string, ns: string, catalog: Catalog): void {
+    // ── Layers ───────────────────────────────────────────────────────────────
+    // `layerTrees` is the source of truth and lives OUTSIDE reactive state,
+    // alongside `loaded`/`inflight`/`failures`. `state.messages` holds the
+    // EFFECTIVE view — one composed catalog per (locale, ns) — which is what
+    // renders, what `lookup` reads, and what crosses the SSR boundary. Keeping
+    // the wire shape as it always was is deliberate: the blob is uncompressed
+    // JSON inlined in the HTML, copied once per island, and the client needs the
+    // resolved strings, not the provenance.
+    const layerOrder: readonly string[] = config.layers?.length ? config.layers : [BASE_LAYER];
+    const defaultLayer = config.defaultLayer ?? layerOrder[0];
+    const layerTrees: LayeredMessages = {};
+
+    // Per-layer loaders; `load` is the loader for `defaultLayer`.
+    const loaders: Record<string, LocaleLoader | undefined> = { ...config.loaders };
+    if (config.load && !loaders[defaultLayer]) loaders[defaultLayer] = config.load;
+    const hasAnyLoader = layerOrder.some(layer => loaders[layer]);
+
+    // Only `layerOrder` is ever consulted by `composeAt`, so a name outside it
+    // writes to a tree nothing reads — the consumer sees no error and no effect.
+    // These are the assumptions the key space and the composer rest on; warn
+    // rather than let them fail silently.
+    // One guard, at every door. `composeAt` consults only `layerOrder`, so a name
+    // outside it writes to a tree nothing reads: no error, no effect. Warned once
+    // per offending name so a bulk seed doesn't spam.
+    const warnedLayers = new Set<string>();
+    function checkLayer(layer: string, where: string): void {
+        // Delimited, not concatenated: ("ab","c") and ("a","bc") would otherwise
+        // share a key and silently swallow one of the warnings — the same
+        // ambiguity the load key avoids.
+        const seen = layer + KEY_SEP + where;
+        if (!__DEV__ || layerOrder.includes(layer) || warnedLayers.has(seen)) return;
+        warnedLayers.add(seen);
+        console.warn(
+            `[@sigx/i18n] ${where} names layer "${layer}", which is not in ` +
+                `[${layerOrder.join(', ')}] — it is stored but never resolved from.`
+        );
+    }
+
+    if (__DEV__) {
+        checkLayer(defaultLayer, 'defaultLayer');
+        for (const layer of Object.keys(config.loaders ?? {})) checkLayer(layer, 'loaders');
+        // `parseKey` recovers a namespace containing the separator (it joins the
+        // remainder), but not a LAYER containing one — that would shift every
+        // field. A layer name is an arbitrary string, so enforce the key-space
+        // invariant here rather than only asserting it in a comment.
+        for (const layer of layerOrder) {
+            if (layer.includes(KEY_SEP)) {
+                console.warn(
+                    `[@sigx/i18n] layer name ${JSON.stringify(layer)} contains U+0000, the load-key ` +
+                        `separator, so invalidate() and setLayer() cannot address it correctly.`
+                );
+            }
+        }
+    }
+
+    /** Recompose the effective catalog for one pair. Single-layer returns by identity. */
+    function recompose(locale: string, ns: string): void {
+        const effective = composeAt(layerTrees, layerOrder, locale, ns);
         const tree = state.messages;
+        if (!effective) {
+            // No layer supplies this pair any more (e.g. `setLayer` dropped it and
+            // nothing lower has it) — the effective view must not keep serving a
+            // catalog that no longer has a source.
+            if (tree[locale]) delete tree[locale][ns];
+            return;
+        }
+        if (!tree[locale]) tree[locale] = {};
+        tree[locale][ns] = effective;
+    }
+
+    /**
+     * Write one catalog into one layer and refresh the effective view.
+     *
+     * The catalog is stored by reference and must be treated as IMMUTABLE —
+     * composition is cached globally by catalog identity, so mutating one in
+     * place would leave a stale composition. Replace it instead (`addMessages`
+     * again, or `setLayer`).
+     */
+    function writeLayer(layer: string, locale: string, ns: string, catalog: Catalog): void {
+        // Every layer write funnels through here — `addMessages`, `setLayer`,
+        // `layerMessages`, `initialMessages` and a loader result alike — so the
+        // membership check belongs at this one door rather than at each caller,
+        // where it is only a matter of time before one is forgotten.
+        checkLayer(layer, 'a catalog write');
+        const tree = (layerTrees[layer] ??= {});
         if (!tree[locale]) tree[locale] = {};
         tree[locale][ns] = catalog;
-        loaded.add(loadKey(locale, ns));
+        recompose(locale, ns);
+        loaded.add(loadKey(layer, locale, ns));
     }
 
     // Seed SSR-preloaded catalogs synchronously so the render is synchronous
@@ -203,18 +321,37 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     if (config.initialMessages) {
         for (const locale of Object.keys(config.initialMessages)) {
             for (const ns of Object.keys(config.initialMessages[locale])) {
-                mergeCatalog(locale, ns, config.initialMessages[locale][ns]);
+                writeLayer(defaultLayer, locale, ns, config.initialMessages[locale][ns]);
                 activeNamespaces.add(ns);
             }
         }
     }
 
-    function loadOne(locale: string, ns: string): Promise<void> {
-        const key = loadKey(locale, ns);
+    // Seed whole layers — the bulk form. Marked loaded for that layer only, so a
+    // lower layer still fetches normally.
+    if (config.layerMessages) {
+        for (const layer of Object.keys(config.layerMessages)) {
+            const tree = config.layerMessages[layer];
+            for (const locale of Object.keys(tree)) {
+                for (const ns of Object.keys(tree[locale])) {
+                    writeLayer(layer, locale, ns, tree[locale][ns]);
+                    activeNamespaces.add(ns);
+                }
+            }
+        }
+    }
+
+    function loadOne(layer: string, locale: string, ns: string): Promise<void> {
+        // `invalidate`/`retry` derive layers from the internal key sets rather
+        // than from `layerOrder`, so a catalog written to an undeclared layer
+        // could otherwise drive a fetch for a layer nothing resolves from.
+        // `loadNamespaceFor` already iterates `layerOrder`; match it.
+        if (!layerOrder.includes(layer)) return Promise.resolve();
+        const key = loadKey(layer, locale, ns);
         if (loaded.has(key)) return Promise.resolve();
         const pending = inflight.get(key);
         if (pending) return pending;
-        const loader = config.load;
+        const loader = loaders[layer];
         if (!loader) return Promise.resolve();
 
         // Snapshot this pair's generation; a superseded load touches nothing.
@@ -234,7 +371,7 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
                     mod && typeof mod === 'object' && 'default' in mod
                         ? (mod as { default: Catalog }).default
                         : (mod as Catalog);
-                mergeCatalog(locale, ns, catalog);
+                writeLayer(layer, locale, ns, catalog);
                 clearFailure(key); // recovered
             })
             .catch(err => {
@@ -260,17 +397,23 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         return job;
     }
 
-    /** Load a namespace for `locale` + the master locale (so fallback is available). */
+    /**
+     * Load a namespace for `locale` + the master locale (so fallback is
+     * available), across every layer that has a loader.
+     */
     function loadNamespaceFor(ns: string, locale: string): Promise<void> {
-        if (!config.load) return Promise.resolve();
-        const jobs = [loadOne(locale, ns)];
-        if (locale !== config.fallbackLocale) jobs.push(loadOne(config.fallbackLocale, ns));
+        if (!hasAnyLoader) return Promise.resolve();
+        const jobs: Promise<void>[] = [];
+        for (const layer of layerOrder) {
+            jobs.push(loadOne(layer, locale, ns));
+            if (locale !== config.fallbackLocale) jobs.push(loadOne(layer, config.fallbackLocale, ns));
+        }
         return Promise.all(jobs).then(() => {});
     }
 
     /** Reload every active namespace for `locale` — used on locale switch. */
     function reloadActive(locale: string): Promise<void> {
-        if (!config.load || activeNamespaces.size === 0) return Promise.resolve();
+        if (!hasAnyLoader || activeNamespaces.size === 0) return Promise.resolve();
         return Promise.all([...activeNamespaces].map(ns => loadNamespaceFor(ns, locale))).then(() => {});
     }
 
@@ -286,47 +429,122 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         /** Idempotently load and merge one catalog; registers the namespace as active. */
         async loadNamespace(locale: string, ns: string): Promise<void> {
             activeNamespaces.add(ns);
-            await loadOne(locale, ns);
+            await loadNamespaceFor(ns, locale);
         },
-        /** Inject a catalog imperatively (tests, HMR, inline definitions). */
-        addMessages(locale: string, ns: string, catalog: Catalog): void {
+        /**
+         * Inject a catalog imperatively (tests, HMR, inline definitions, an
+         * override fetched at runtime). With `layers` declared, name the layer to
+         * override individual keys — every key the catalog omits still falls
+         * through to the layer below:
+         *
+         * ```ts
+         * store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'tenant' });
+         * ```
+         *
+         * Treat `catalog` as immutable once passed; replace it rather than
+         * mutating it in place.
+         */
+        addMessages(locale: string, ns: string, catalog: Catalog, options?: { layer?: string }): void {
             activeNamespaces.add(ns);
-            mergeCatalog(locale, ns, catalog);
+            writeLayer(options?.layer ?? defaultLayer, locale, ns, catalog);
+        },
+        /**
+         * Replace a whole layer in one call — the bulk form, for overrides held
+         * in hand (one query returning every namespace for a tenant). Every pair
+         * the layer previously supplied is recomposed, so removing a key from the
+         * tree correctly falls back to the layer below.
+         *
+         * ```ts
+         * store.setLayer('tenant', await db.loadOverrides());
+         * ```
+         */
+        setLayer(layer: string, tree: MessageTree): void {
+            // Checked here as well as in `writeLayer`: an empty tree writes nothing.
+            checkLayer(layer, 'setLayer');
+            // Supersede this layer's in-flight loads FIRST. A request already
+            // running would otherwise resolve after the swap and call
+            // `writeLayer` with what it fetched, quietly reinstating the tree
+            // that was just replaced. `invalidate` guards the same way; bumping
+            // the generation makes the orphaned job drop its own result.
+            for (const key of new Set([...loaded, ...inflight.keys(), ...failures.keys()])) {
+                if (parseKey(key)[0] !== layer) continue;
+                keyGen.set(key, (keyGen.get(key) ?? 0) + 1);
+                loaded.delete(key);
+                inflight.delete(key);
+                // Clear the failure too, or `loadError` stays stuck forever: the
+                // caller has just SUPPLIED this layer's contents, and `retry()`
+                // could not clear it either — `writeLayer` marks the pair loaded,
+                // so `loadOne` short-circuits before reaching `clearFailure`.
+                clearFailure(key);
+            }
+
+            const previous = layerTrees[layer];
+            const touched = new Set<string>();
+            if (previous) {
+                for (const locale of Object.keys(previous)) {
+                    for (const ns of Object.keys(previous[locale])) {
+                        touched.add(loadKey(layer, locale, ns));
+                    }
+                }
+            }
+            layerTrees[layer] = {};
+            for (const locale of Object.keys(tree)) {
+                for (const ns of Object.keys(tree[locale])) {
+                    writeLayer(layer, locale, ns, tree[locale][ns]);
+                    activeNamespaces.add(ns);
+                    touched.delete(loadKey(layer, locale, ns));
+                }
+            }
+            // Pairs the layer used to supply but no longer does: recompose so the
+            // lower layers show through again.
+            for (const key of touched) {
+                const [, locale, ns] = parseKey(key);
+                recompose(locale, ns);
+            }
         },
         /**
          * Drop cached catalogs and refetch the active ones — how a client picks
          * up a publish from a runtime-sourced catalog (a CMS, a form builder)
-         * without a page reload. Narrow with `invalidate(locale)` or
-         * `invalidate(locale, ns)`; no arguments invalidates everything.
+         * without a page reload. Narrow with `invalidate(locale)`,
+         * `invalidate(locale, ns)` or `invalidate(locale, ns, layer)` — the last
+         * refetches one layer and leaves the others cached; no arguments
+         * invalidates everything.
          *
          * Stale-while-revalidate: the old catalogs stay in `messages` until the
-         * refetch lands (`mergeCatalog` replaces a pair wholesale), so the UI
-         * never flashes raw keys. No-op without a `load`, since nothing could
-         * bring back what was dropped.
+         * refetch lands (`writeLayer` recomposes a pair wholesale), so the UI
+         * never flashes raw keys. No-op when no layer has a loader, since
+         * nothing could bring back what was dropped.
          */
-        async invalidate(locale?: string, ns?: string): Promise<void> {
-            if (!config.load) return;
+        async invalidate(locale?: string, ns?: string, layer?: string): Promise<void> {
+            if (!hasAnyLoader) return;
             // `failures` is in the candidate set too: a pair whose last load
             // rejected is in neither `loaded` nor `inflight`, and leaving it out
             // would make a transient failure unrecoverable by `invalidate` alone.
             const stale = [...new Set([...loaded, ...inflight.keys(), ...failures.keys()])]
                 .map(parseKey)
-                .filter(([l, n]) => (locale === undefined || l === locale) && (ns === undefined || n === ns));
+                .filter(
+                    ([lay, l, n]) =>
+                        (locale === undefined || l === locale) &&
+                        (ns === undefined || n === ns) &&
+                        (layer === undefined || lay === layer)
+                );
 
-            for (const [l, n] of stale) {
-                const key = loadKey(l, n);
+            for (const [lay, l, n] of stale) {
+                const key = loadKey(lay, l, n);
                 keyGen.set(key, (keyGen.get(key) ?? 0) + 1);
                 loaded.delete(key);
                 inflight.delete(key);
             }
             // Only refetch what something is actually using; an inactive
             // namespace reloads on its next `ensureNamespace`.
-            await Promise.all(stale.filter(([, n]) => activeNamespaces.has(n)).map(([l, n]) => loadOne(l, n)));
+            await Promise.all(
+                stale.filter(([, , n]) => activeNamespaces.has(n)).map(([lay, l, n]) => loadOne(lay, l, n))
+            );
         },
         /** Retry every catalog load that failed. Drives a "translations unavailable" affordance. */
         async retry(): Promise<void> {
             const pairs = [...failures.keys()].map(parseKey);
-            await Promise.all(pairs.map(([l, n]) => loadOne(l, n)));
+            await Promise.all(pairs.map(([lay, l, n]) => loadOne(lay, l, n)));
         }
     });
 
@@ -400,6 +618,22 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         );
     }
 
+    /**
+     * Which `(layer, locale)` supplies `key` — the answer to "why is this string
+     * wrong", which gets genuinely hard to work out by inspection once there are
+     * both a locale chain and a layer stack.
+     *
+     * Walks the locale chain outer, layers inner (high→low), mirroring exactly
+     * how the value was resolved. Returns `null` when the key resolves nowhere.
+     */
+    function explain(namespace: string, key: string): { layer: string; locale: string } | null {
+        for (const l of localeChain(state.locale, state.fallbackLocale, config.localeFallbacks)) {
+            const layer = layerFor(layerTrees, layerOrder, l, namespace, key);
+            if (layer) return { layer, locale: l };
+        }
+        return null;
+    }
+
     const loading = computed(
         () =>
             actions.setLocale.pending ||
@@ -438,12 +672,23 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
             : installPersistSSR(ctx, { state, patch }, config.persistence ?? {});
 
     // Client hydration: the server already sent these catalogs via `ssrState`, so
-    // mark them loaded (mirroring mergeCatalog) — otherwise the initial reload
-    // below would re-fetch every server-sent namespace (flash + wasted request).
+    // mark them loaded — otherwise the initial reload below would re-fetch every
+    // server-sent namespace (flash + wasted request).
+    //
+    // What crossed the wire is the EFFECTIVE view, already layered by the server,
+    // so it seeds the lowest layer and only that layer counts as loaded. Any
+    // higher layer still fetches normally. The consequence to know: for a
+    // server-rendered string, `explain()` reports the base layer rather than the
+    // layer the server actually resolved it from — provenance is not transferred,
+    // because the client needs the resolved strings, not their history.
     if (ssrHydrated) {
+        const baseLayer = layerOrder[0];
+        const seeded = (layerTrees[baseLayer] ??= {});
         for (const locale of Object.keys(state.messages)) {
+            if (!seeded[locale]) seeded[locale] = {};
             for (const ns of Object.keys(state.messages[locale])) {
-                loaded.add(loadKey(locale, ns));
+                seeded[locale][ns] = state.messages[locale][ns];
+                loaded.add(loadKey(baseLayer, locale, ns));
                 activeNamespaces.add(ns);
             }
         }
@@ -464,6 +709,8 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         localeChanged: events.localeChanged,
         translateKey,
         hasKey,
+        explain,
+        layers: layerOrder,
         ensureNamespace,
         whenReady,
         ssrHydrated,

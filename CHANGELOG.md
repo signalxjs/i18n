@@ -6,6 +6,63 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Layered catalogs** (#30) — override **individual keys** of a catalog you don't
+  own. A library ships defaults; a downstream app, or one per-tenant deployment of
+  it, changes a handful of strings and everything else keeps coming from the layer
+  below — including keys the base gains in a later version.
+
+  Three things made this impossible before, and all three are fixed:
+  - `mergeCatalog` **replaced** a whole catalog despite the name, so a second
+    registration wiped the other keys.
+  - It also marked the pair loaded, so whichever source registered first silently
+    suppressed the other — order-dependent on async timing, and untested either
+    way. Loads are now keyed `(layer, locale, namespace)`, which removes it.
+  - `translate()` had one widening axis (the locale chain) and no notion of
+    priority.
+
+  Surface: `layers` (ordered, lowest first), `defaultLayer`, per-layer `loaders`,
+  and `layerMessages` for seeding whole trees. Imperatively,
+  `store.setLayer(name, tree)` swaps a layer and
+  `addMessages(locale, ns, catalog, { layer })` sets one key.
+  **The server takes the same layers** (`layers`, `layerCatalogs`, and
+  `LocaleTranslator.withLayers` for a per-request tenant), so a white-label string
+  is identical in an email and in the UI.
+
+  **Precedence is locale outer, layer inner**: a `base` message in the requested
+  locale beats a `tenant` override that exists only in a fallback locale. A
+  partly-translated override therefore never drags text back to the master
+  language, and a message is still formatted in the locale it was *found* in,
+  which plural selection depends on.
+
+  Composition is cached **globally, keyed by catalog identity** through a WeakMap
+  trie, so an SSR process serving many requests composes each distinct layer stack
+  once rather than per store instance. Identity keying is also what makes a global
+  cache safe in a multi-tenant process: one tenant's catalog object can never key
+  another's result. The corollary is that a registered catalog must be treated as
+  **immutable** — replace it rather than mutating it in place.
+
+  Consumers using no layers are unaffected and pay nothing: a single-layer
+  composition returns the catalog **by identity**, with no merge and no allocation.
+  The SSR wire shape is unchanged — the server sends the already-layered effective
+  view, since the client needs the resolved strings rather than their provenance.
+- **`store.explain(namespace, key)`** — which `(layer, locale)` supplied a message.
+  With both a locale chain and a layer stack, "why is this string wrong" stops
+  being answerable by inspection.
+- **`composeCatalogs` / `composeAt` / `layerFor`** (`@sigx/i18n`) — the pure layer
+  primitives, in a new sigx-free `layers.ts` shared by the store and the server.
+  `flatten` moved here from `manifest.ts` (which imports `node:fs`) and is
+  re-exported, so there is one flattener and the server graph stays `node:`-free.
+  Both key spellings are normalised before merging, so a flat `{"cart.title"}`
+  override shadows a nested `{cart:{title}}` base and vice versa.
+
+### Fixed
+- **A test that passed vacuously.** `persist-ssr.test.ts`'s *"gives each instance
+  its own catalog tree"* called `addMessages('de', { … })` with the wrong arity,
+  writing `tree.de['[object Object]'] = undefined`, so it proved nothing about
+  copy isolation. `__tests__` is outside the root `tsconfig` include, so the arity
+  error was never caught.
+
 ### Changed / removed — BREAKING (server entry)
 - **One translation surface for the client and the server** (#42). The server
   translator now *is* the client's translator: bind a locale, then a namespace,

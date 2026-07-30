@@ -2,7 +2,7 @@
  * Tests for the server translator — the universal entry (`@sigx/i18n/server`,
  * catalogs as data) and the Node fs loader (`@sigx/i18n/server/node`).
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -225,6 +225,168 @@ describe('createRequestT', () => {
     it('falls back to the master locale when nothing matches', () => {
         expect(requestT(new Request('https://example.test/', { headers: { 'accept-language': 'de' } })).locale).toBe(
             'en'
+        );
+    });
+});
+
+describe('server — layered catalogs', () => {
+    const base: MessageTree = {
+        en: { mail: { subject: 'Welcome', body: 'Hi {name}', signoff: '— The team' } },
+        sv: { mail: { subject: 'Välkommen' } }
+    };
+
+    it('overrides individual keys, leaving the rest of the base intact', () => {
+        const t = createServerT({
+            catalogs: base,
+            layers: ['base', 'tenant'],
+            layerCatalogs: { tenant: { en: { mail: { subject: 'Welcome to Acme' } } } },
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+        const m = t.forLocale('en').forNamespace('mail');
+        expect(m.subject()).toBe('Welcome to Acme');
+        expect(m.body({ name: 'Ada' })).toBe('Hi Ada');
+        expect(m.signoff()).toBe('— The team');
+    });
+
+    it('applies layers within a locale, so the locale chain still wins', () => {
+        const t = createServerT({
+            catalogs: base,
+            layers: ['base', 'tenant'],
+            layerCatalogs: { tenant: { en: { mail: { subject: 'Acme' } } } },
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+        // sv has its own base `subject`; the en tenant override must not reach in.
+        expect(t.forLocale('sv').forNamespace('mail').subject()).toBe('Välkommen');
+        // …but `body` is en-only, so sv resolves it through the fallback.
+        expect(t.forLocale('sv').forNamespace('mail').body({ name: 'Åsa' })).toBe('Hi Åsa');
+    });
+
+    it('keeps `messages` as the base object when no layers are declared', () => {
+        const t = createServerT({ catalogs: base, fallbackLocale: 'en' });
+        expect(t.messages).toBe(base);
+    });
+
+    it('withLayers binds a per-request layer without touching the receiver', () => {
+        const requestT = createRequestT({
+            catalogs: base,
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail',
+            layers: ['base', 'tenant'],
+            supported: ['en', 'sv']
+        });
+        const rt = requestT({ url: '/', headers: {} });
+
+        const acme = rt.withLayers({ tenant: { en: { mail: { subject: 'Acme' } } } });
+        expect(acme.forNamespace('mail').subject()).toBe('Acme');
+        // The receiver is unchanged — this is what lets one createRequestT serve many tenants.
+        expect(rt.forNamespace('mail').subject()).toBe('Welcome');
+    });
+
+    // The failure a GLOBAL composition cache would plausibly have, and the one a
+    // multi-tenant deployment would discover in production: two stacks sharing a
+    // base prefix returning each other's answer.
+    it('does not leak between tenants off one createRequestT', () => {
+        const requestT = createRequestT({
+            catalogs: base,
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail',
+            layers: ['base', 'tenant']
+        });
+
+        const a = requestT({ url: '/', headers: {} }).withLayers({
+            tenant: { en: { mail: { subject: 'Acme' } } }
+        });
+        const b = requestT({ url: '/', headers: {} }).withLayers({
+            tenant: { en: { mail: { subject: 'Globex' } } }
+        });
+
+        expect(a.forNamespace('mail').subject()).toBe('Acme');
+        expect(b.forNamespace('mail').subject()).toBe('Globex');
+        // Re-read A after B — a colliding cache would hand back B's answer.
+        expect(a.forNamespace('mail').subject()).toBe('Acme');
+        // Both still see the un-overridden base keys.
+        expect(a.forNamespace('mail').signoff()).toBe('— The team');
+        expect(b.forNamespace('mail').signoff()).toBe('— The team');
+    });
+
+    it('layers reach the dynamic form and exists too', () => {
+        const t = createServerT({
+            catalogs: base,
+            layers: ['base', 'tenant'],
+            layerCatalogs: { tenant: { en: { mail: { extra: 'Only in tenant' } } } },
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+        const d = t.forLocale('en').dynamic('mail');
+        expect(d('extra')).toBe('Only in tenant');
+        expect(d.exists('extra')).toBe(true);
+        expect(d.exists('signoff')).toBe(true); // from the base
+        expect(d.exists('nope')).toBe(false);
+    });
+
+    it('resolves identically to the client for the same layers', () => {
+        // The point of sharing `layers.ts`: a white-label string must not differ
+        // between the email and the UI.
+        const t = createServerT({
+            catalogs: base,
+            layers: ['base', 'tenant'],
+            layerCatalogs: { tenant: { en: { mail: { subject: 'Acme' } } } },
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+        expect(t.forLocale('en').t('subject')).toBe('Acme');
+        expect(t.forLocale('en').t('signoff')).toBe('— The team');
+    });
+});
+
+describe('server — catalogs always fills the lowest layer', () => {
+    it('does not let layerCatalogs silently discard the required catalogs argument', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        warn.mockClear();
+
+        const t = createServerT({
+            catalogs: { en: { mail: { subject: 'From catalogs' } } },
+            layers: ['base', 'tenant'],
+            // A mistake: `base` is filled by `catalogs`. It must not win silently.
+            layerCatalogs: { base: { en: { mail: { subject: 'From layerCatalogs' } } } },
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+
+        expect(t.forLocale('en').t('subject')).toBe('From catalogs');
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('is ignored'));
+        warn.mockRestore();
+    });
+});
+
+describe('server — an empty layer keeps the fast path', () => {
+    it('treats withLayers({ tenant: {} }) as a no-op, by identity', () => {
+        const catalogs: MessageTree = { en: { mail: { subject: 'Welcome' } } };
+        const t = createServerT({
+            catalogs,
+            layers: ['base', 'tenant'],
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+        // "No overrides for this tenant" is a common case; it must not force a
+        // full walk and a copy of the base.
+        const none = t.forLocale('en').withLayers({ tenant: {} });
+        expect(none.forNamespace('mail').subject()).toBe('Welcome');
+        expect(t.messages).toBe(catalogs);
+    });
+});
+
+describe('server — messages identity survives an empty catalogs', () => {
+    it('returns the very object passed, even when it is {}', () => {
+        // Regression: filtering empty trees out of `contributing` made the
+        // lowest layer vanish for `catalogs: {}`, so `messages` became a fresh
+        // object instead of the documented identity.
+        const catalogs: MessageTree = {};
+        expect(createServerT({ catalogs, fallbackLocale: 'en' }).messages).toBe(catalogs);
+        expect(createServerT({ catalogs, fallbackLocale: 'en', layers: ['base', 'tenant'] }).messages).toBe(
+            catalogs
         );
     });
 });
