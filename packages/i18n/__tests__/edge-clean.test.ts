@@ -75,38 +75,68 @@ describe('edge cleanliness', () => {
     // `translator.ts` precisely so that `server.ts` can reach it without
     // `accessor.ts`, which imports the store at value level.
 
-    /** Follow relative `./x.js` imports from an entry, returning the whole source graph. */
-    async function graphFrom(entry: string): Promise<string[]> {
-        const seen = new Set<string>();
-        const queue = [entry];
-        while (queue.length) {
-            const name = queue.pop() as string;
-            if (seen.has(name)) continue;
-            seen.add(name);
-            let text: string;
+    /**
+     * Resolve a `./x.js` specifier to its source file, trying both extensions —
+     * `component.tsx` is a real module in this package, and resolving only `.ts`
+     * would let the walk below skip it in silence, which is the one way a guard
+     * like this fails: a false negative that looks exactly like a pass.
+     */
+    async function readSource(base: string): Promise<{ name: string; text: string } | null> {
+        for (const ext of ['.ts', '.tsx']) {
             try {
-                text = await readFile(join(SRC, name), 'utf-8');
+                return { name: base + ext, text: await readFile(join(SRC, base + ext), 'utf-8') };
             } catch {
-                continue; // .tsx or a path we cannot resolve — not part of this entry
-            }
-            for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.\/[^'"]+)\.js['"]/g)) {
-                queue.push(`${m[1].slice(2)}.ts`);
+                /* try the next extension */
             }
         }
-        return [...seen];
+        return null;
+    }
+
+    /**
+     * Follow relative `./x.js` imports from an entry, returning the whole source
+     * graph plus anything that could NOT be resolved — the caller asserts the
+     * latter is empty, so an unresolvable import fails loudly instead of
+     * quietly shrinking the graph under test.
+     */
+    async function graphFrom(entry: string): Promise<{ files: string[]; unresolved: string[] }> {
+        const seen = new Set<string>();
+        const unresolved: string[] = [];
+        const queue = [entry.replace(/\.tsx?$/, '')];
+        while (queue.length) {
+            const base = queue.pop() as string;
+            if (seen.has(base)) continue;
+            seen.add(base);
+            const src = await readSource(base);
+            if (!src) {
+                unresolved.push(base);
+                continue;
+            }
+            for (const m of src.text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.\/[^'"]+)\.js['"]/g)) {
+                queue.push(m[1].slice(2));
+            }
+        }
+        const files: string[] = [];
+        for (const base of seen) {
+            const src = await readSource(base);
+            if (src) files.push(src.name);
+        }
+        return { files, unresolved };
     }
 
     const SIGX_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"](?:@sigx\/[^'"]+|sigx(?:\/[^'"]*)?)['"]/;
 
     it('keeps the whole @sigx/i18n/server graph free of sigx', async () => {
-        const graph = await graphFrom('server.ts');
+        const { files, unresolved } = await graphFrom('server.ts');
+        // Every relative import must have resolved, or the graph under test is
+        // smaller than the real one and the assertion below is worth less.
+        expect(unresolved).toEqual([]);
         // Sanity: the walk must actually reach the shared translator, or the
         // assertion below proves nothing.
-        expect(graph).toContain('translator.ts');
-        expect(graph).toContain('translate.ts');
+        expect(files).toContain('translator.ts');
+        expect(files).toContain('translate.ts');
 
         const offenders: string[] = [];
-        for (const name of graph) {
+        for (const name of files) {
             if (SIGX_IMPORT.test(await readFile(join(SRC, name), 'utf-8'))) offenders.push(name);
         }
         expect(offenders).toEqual([]);
@@ -129,12 +159,29 @@ describe('edge cleanliness', () => {
         // `server.ts` ever reaches it, the invariant above must fail. Asserting
         // the walk from `accessor.ts` DOES find sigx pins that the detector and
         // the traversal actually work together.
-        const graph = await graphFrom('accessor.ts');
-        expect(graph).toContain('store.ts');
+        const { files, unresolved } = await graphFrom('accessor.ts');
+        expect(unresolved).toEqual([]);
+        expect(files).toContain('store.ts');
         const offenders: string[] = [];
-        for (const name of graph) {
+        for (const name of files) {
             if (SIGX_IMPORT.test(await readFile(join(SRC, name), 'utf-8'))) offenders.push(name);
         }
         expect(offenders).toContain('store.ts');
+    });
+
+    it('resolves .tsx modules, so the walk cannot skip one in silence', async () => {
+        // `component.tsx` is the package's only .tsx source and it imports `sigx`
+        // directly. A walk that resolved `./component.js` to `component.ts` only
+        // would drop it — and a dropped module cannot be reported as an offender,
+        // which is a false PASS. Walking from the root entry must find it.
+        const { files, unresolved } = await graphFrom('index.ts');
+        expect(unresolved).toEqual([]);
+        expect(files).toContain('component.tsx');
+
+        const offenders: string[] = [];
+        for (const name of files) {
+            if (SIGX_IMPORT.test(await readFile(join(SRC, name), 'utf-8'))) offenders.push(name);
+        }
+        expect(offenders).toContain('component.tsx');
     });
 });
