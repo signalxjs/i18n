@@ -2,7 +2,7 @@
  * Tests for the server translator — the universal entry (`@sigx/i18n/server`,
  * catalogs as data) and the Node fs loader (`@sigx/i18n/server/node`).
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -338,5 +338,25 @@ describe('server — layered catalogs', () => {
         });
         expect(t.forLocale('en').t('subject')).toBe('Acme');
         expect(t.forLocale('en').t('signoff')).toBe('— The team');
+    });
+});
+
+describe('server — catalogs always fills the lowest layer', () => {
+    it('does not let layerCatalogs silently discard the required catalogs argument', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        warn.mockClear();
+
+        const t = createServerT({
+            catalogs: { en: { mail: { subject: 'From catalogs' } } },
+            layers: ['base', 'tenant'],
+            // A mistake: `base` is filled by `catalogs`. It must not win silently.
+            layerCatalogs: { base: { en: { mail: { subject: 'From layerCatalogs' } } } },
+            fallbackLocale: 'en',
+            defaultNamespace: 'mail'
+        });
+
+        expect(t.forLocale('en').t('subject')).toBe('From catalogs');
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('is ignored'));
+        warn.mockRestore();
     });
 });

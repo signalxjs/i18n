@@ -407,13 +407,24 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
          * ```
          */
         setLayer(layer: string, tree: MessageTree): void {
+            // Supersede this layer's in-flight loads FIRST. A request already
+            // running would otherwise resolve after the swap and call
+            // `writeLayer` with what it fetched, quietly reinstating the tree
+            // that was just replaced. `invalidate` guards the same way; bumping
+            // the generation makes the orphaned job drop its own result.
+            for (const key of new Set([...loaded, ...inflight.keys(), ...failures.keys()])) {
+                if (parseKey(key)[0] !== layer) continue;
+                keyGen.set(key, (keyGen.get(key) ?? 0) + 1);
+                loaded.delete(key);
+                inflight.delete(key);
+            }
+
             const previous = layerTrees[layer];
             const touched = new Set<string>();
             if (previous) {
                 for (const locale of Object.keys(previous)) {
                     for (const ns of Object.keys(previous[locale])) {
                         touched.add(loadKey(layer, locale, ns));
-                        loaded.delete(loadKey(layer, locale, ns));
                     }
                 }
             }
@@ -435,8 +446,10 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
         /**
          * Drop cached catalogs and refetch the active ones — how a client picks
          * up a publish from a runtime-sourced catalog (a CMS, a form builder)
-         * without a page reload. Narrow with `invalidate(locale)` or
-         * `invalidate(locale, ns)`; no arguments invalidates everything.
+         * without a page reload. Narrow with `invalidate(locale)`,
+         * `invalidate(locale, ns)` or `invalidate(locale, ns, layer)` — the last
+         * refetches one layer and leaves the others cached; no arguments
+         * invalidates everything.
          *
          * Stale-while-revalidate: the old catalogs stay in `messages` until the
          * refetch lands (`mergeCatalog` replaces a pair wholesale), so the UI

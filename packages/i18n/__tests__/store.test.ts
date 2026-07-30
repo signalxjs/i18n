@@ -581,3 +581,33 @@ describe('store — layered catalogs', () => {
         stop.stop();
     });
 });
+
+describe('store — setLayer supersedes in-flight loads', () => {
+    it('drops a load that resolves after the layer was swapped', async () => {
+        // Without a generation bump the orphaned request lands `writeLayer` and
+        // quietly reinstates the tree that setLayer had just replaced — the same
+        // race `invalidate` guards against.
+        let release!: (c: Record<string, string>) => void;
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            loaders: {
+                base: async () => ({ title: 'Cart', empty: 'Nothing here' }),
+                tenant: () => new Promise(r => (release = r))
+            }
+        });
+
+        const pending = store.ensureNamespace('cart');
+        await flush(); // the loaders are invoked inside the promise chain
+
+        store.setLayer('tenant', { en: { cart: { title: 'Trolley' } } });
+        expect(store.translateKey('cart', 'title')).toBe('Trolley');
+
+        release({ title: 'STALE' }); // the superseded request finally answers
+        await pending;
+        await flush();
+
+        expect(store.translateKey('cart', 'title')).toBe('Trolley');
+        expect(store.translateKey('cart', 'empty')).toBe('Nothing here');
+    });
+});

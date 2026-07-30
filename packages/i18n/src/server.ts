@@ -57,8 +57,10 @@ export interface ServerI18nOptions {
      */
     layers?: string[];
     /**
-     * Seed whole layers at construction. `catalogs` fills the lowest layer, so
-     * this is where the overrides go: `layerCatalogs[layer][locale][namespace]`.
+     * Seed whole layers at construction: `layerCatalogs[layer][locale][namespace]`.
+     *
+     * `catalogs` fills the lowest layer unconditionally, so name a **higher**
+     * layer here — an entry for the lowest one is ignored (with a dev warning).
      * For a layer that varies per request, use {@link LocaleTranslator.withLayers}.
      */
     layerCatalogs?: LayeredMessages;
@@ -167,7 +169,17 @@ export function createServerT(options: ServerI18nOptions): ServerTranslator {
 
     const layerOrder: readonly string[] = options.layers?.length ? options.layers : [BASE_LAYER];
     const rootLayers: LayeredMessages = { ...options.layerCatalogs };
-    rootLayers[layerOrder[0]] ??= catalogs;
+    // `catalogs` is required and IS the lowest layer, so it wins that slot
+    // unconditionally — a `??=` here would let a `layerCatalogs` entry silently
+    // discard a required argument. Naming the lowest layer in `layerCatalogs` is
+    // therefore a mistake, and a loud one rather than a silent one.
+    if (__DEV__ && options.layerCatalogs && layerOrder[0] in options.layerCatalogs) {
+        console.warn(
+            `[@sigx/i18n] layerCatalogs["${layerOrder[0]}"] is ignored — that layer is filled by ` +
+                `\`catalogs\`. Put overrides in a higher layer, or reorder \`layers\`.`
+        );
+    }
+    rootLayers[layerOrder[0]] = catalogs;
 
     /**
      * Flatten a layer stack into one effective tree. Every `(locale, ns)` goes
