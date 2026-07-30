@@ -250,8 +250,12 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     // per offending name so a bulk seed doesn't spam.
     const warnedLayers = new Set<string>();
     function checkLayer(layer: string, where: string): void {
-        if (!__DEV__ || layerOrder.includes(layer) || warnedLayers.has(layer + where)) return;
-        warnedLayers.add(layer + where);
+        // Delimited, not concatenated: ("ab","c") and ("a","bc") would otherwise
+        // share a key and silently swallow one of the warnings — the same
+        // ambiguity the load key avoids.
+        const seen = layer + KEY_SEP + where;
+        if (!__DEV__ || layerOrder.includes(layer) || warnedLayers.has(seen)) return;
+        warnedLayers.add(seen);
         console.warn(
             `[@sigx/i18n] ${where} names layer "${layer}", which is not in ` +
                 `[${layerOrder.join(', ')}] — it is stored but never resolved from.`
@@ -261,6 +265,18 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     if (__DEV__) {
         checkLayer(defaultLayer, 'defaultLayer');
         for (const layer of Object.keys(config.loaders ?? {})) checkLayer(layer, 'loaders');
+        // `parseKey` recovers a namespace containing the separator (it joins the
+        // remainder), but not a LAYER containing one — that would shift every
+        // field. A layer name is an arbitrary string, so enforce the key-space
+        // invariant here rather than only asserting it in a comment.
+        for (const layer of layerOrder) {
+            if (layer.includes(KEY_SEP)) {
+                console.warn(
+                    `[@sigx/i18n] layer name ${JSON.stringify(layer)} contains U+0000, the load-key ` +
+                        `separator, so invalidate() and setLayer() cannot address it correctly.`
+                );
+            }
+        }
     }
 
     /** Recompose the effective catalog for one pair. Single-layer returns by identity. */
@@ -326,6 +342,11 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     }
 
     function loadOne(layer: string, locale: string, ns: string): Promise<void> {
+        // `invalidate`/`retry` derive layers from the internal key sets rather
+        // than from `layerOrder`, so a catalog written to an undeclared layer
+        // could otherwise drive a fetch for a layer nothing resolves from.
+        // `loadNamespaceFor` already iterates `layerOrder`; match it.
+        if (!layerOrder.includes(layer)) return Promise.resolve();
         const key = loadKey(layer, locale, ns);
         if (loaded.has(key)) return Promise.resolve();
         const pending = inflight.get(key);

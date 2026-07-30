@@ -377,3 +377,16 @@ describe('server — an empty layer keeps the fast path', () => {
         expect(t.messages).toBe(catalogs);
     });
 });
+
+describe('server — messages identity survives an empty catalogs', () => {
+    it('returns the very object passed, even when it is {}', () => {
+        // Regression: filtering empty trees out of `contributing` made the
+        // lowest layer vanish for `catalogs: {}`, so `messages` became a fresh
+        // object instead of the documented identity.
+        const catalogs: MessageTree = {};
+        expect(createServerT({ catalogs, fallbackLocale: 'en' }).messages).toBe(catalogs);
+        expect(createServerT({ catalogs, fallbackLocale: 'en', layers: ['base', 'tenant'] }).messages).toBe(
+            catalogs
+        );
+    });
+});

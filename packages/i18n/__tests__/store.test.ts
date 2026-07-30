@@ -740,3 +740,28 @@ describe('store — setLayer clears a stuck error state', () => {
         expect(store.loadError).toBeNull();
     });
 });
+
+describe('store — loads stay inside the declared layers', () => {
+    it('never drives a loader for a layer that is not declared', async () => {
+        // invalidate()/retry() derive layers from the internal key sets, not from
+        // `layers`, so a catalog written to an undeclared layer could otherwise
+        // cause a fetch for a layer nothing resolves from.
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const ghost = vi.fn(async () => ({ title: 'Ghost' }));
+        const { store } = setup({
+            fallbackLocale: 'en',
+            layers: ['base'],
+            loaders: { base: async () => ({ title: 'Cart' }), ghost }
+        });
+        await store.ensureNamespace('cart');
+        await flush();
+
+        store.addMessages('en', 'cart', { title: 'X' }, { layer: 'ghost' });
+        await store.invalidate();
+        await flush();
+
+        expect(ghost).not.toHaveBeenCalled();
+        expect(store.translateKey('cart', 'title')).toBe('Cart');
+        warn.mockRestore();
+    });
+});

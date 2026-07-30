@@ -195,9 +195,14 @@ export function createServerT(options: ServerI18nOptions): ServerTranslator {
         // — otherwise the common `withLayers({ tenant: {} })` ("no overrides for
         // this tenant") would lose the identity fast path and walk the whole tree
         // to produce a copy of the base.
-        const contributing = layerOrder.filter(layer => {
+        const contributing = layerOrder.filter((layer, i) => {
             const tree = layered[layer];
-            return tree && Object.keys(tree).length > 0;
+            if (!tree) return false;
+            // The LOWEST layer always contributes, even when empty. It holds
+            // `catalogs`, which `messages` is documented to be by identity —
+            // filtering it out when a caller legitimately passes `{}` would
+            // hand back a fresh object instead.
+            return i === 0 || Object.keys(tree).length > 0;
         });
         if (contributing.length <= 1) return layered[contributing[0]] ?? {};
         const out: MessageTree = {};
