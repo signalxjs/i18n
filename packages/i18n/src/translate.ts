@@ -15,7 +15,8 @@ import type {
     MessageValue,
     Params,
     ResolveScope,
-    TranslateConfig
+    TranslateConfig,
+    TranslateOptions
 } from './types.js';
 
 /** A leaf is a string or a `PluralForms` object; anything else is a nested group. */
@@ -137,4 +138,30 @@ export function translate(
         );
     }
     return key;
+}
+
+/**
+ * `translate`, plus the per-call `options.default`. The one place that knows how
+ * a call-site fallback behaves, so the reactive store and the server translator
+ * cannot drift.
+ *
+ * The default is the author's source text, so it goes through the SAME formatter
+ * a catalog string would — a CMS block authored as `"Hi {name}"` interpolates.
+ * It bypasses `onMissing` and its dev warning: an explicit fallback means the
+ * miss is expected, not a bug.
+ */
+export function translateWith(
+    tree: MessageTree,
+    key: string,
+    params: Params | undefined,
+    scope: ResolveScope,
+    config: TranslateConfig,
+    options?: TranslateOptions
+): string {
+    const fallback = options?.default;
+    if (fallback === undefined) return translate(tree, key, params, scope, config);
+    return translate(tree, key, params, scope, {
+        ...config,
+        onMissing: () => config.formatter.format(fallback, params, { locale: scope.locale, key })
+    });
 }

@@ -33,18 +33,21 @@ async function mailRoute(req, res) {
         defaultNamespace: 'mail'
     });
     const locale = typeof req.query.lang === 'string' ? req.query.lang : 'en';
-    const m = t.forLocale(locale, { namespace: 'mail' });
+    // Bind locale, then namespace — the result is the same proxy translator the
+    // client gets from `useTranslation`, so `${m.subject}` coerces and
+    // `m.welcome({ name })` interpolates, exactly as in a component.
+    const m = t.forLocale(locale).forNamespace('mail');
     const name = 'Ada';
     res.type('html').send(
-        `<!doctype html><meta charset="utf-8"><title>${m('subject')}</title>` +
+        `<!doctype html><meta charset="utf-8"><title>${m.subject}</title>` +
             `<div style="font:15px/1.6 system-ui;max-width:520px;margin:3rem auto;padding:1.5rem;border:1px solid #8883;border-radius:12px">` +
             `<nav style="margin-bottom:1rem">lang: <a href="/mail?lang=en">EN</a> · <a href="/mail?lang=sv">SV</a> · <a href="/">← app</a></nav>` +
-            `<p style="opacity:.6">Subject: ${m('subject')}</p>` +
-            `<h2 style="margin-top:0">${m('welcome', { name })}</h2>` +
-            `<p>${m('body', { credits: 250 })}</p>` +
+            `<p style="opacity:.6">Subject: ${m.subject}</p>` +
+            `<h2 style="margin-top:0">${m.welcome({ name })}</h2>` +
+            `<p>${m.body({ credits: 250 })}</p>` +
             // `ps` exists only in en/mail.json → falls back to the master locale in sv
-            `<p style="opacity:.75">${m('ps')}</p>` +
-            `<p style="opacity:.6">${m('signoff')}</p>` +
+            `<p style="opacity:.75">${m.ps}</p>` +
+            `<p style="opacity:.6">${m.signoff}</p>` +
             `<hr style="border:none;border-top:1px solid #8882;margin:1.5rem 0">` +
             `<p style="opacity:.5;font-size:.85em">Rendered on the server with <code>@sigx/i18n/server</code> — ` +
             `no app, no DOM, no client bundle.</p></div>`

@@ -102,7 +102,8 @@ To run a package script: `pnpm --filter <package-name> <script>`.
 
 - `packages/i18n` → `@sigx/i18n` — Reactive localization for SignalX. Subpath
   exports: `.` (core: store, `useTranslation` accessor, `<T>` component, plugin),
-  `./server` (non-reactive translator for mail/jobs), `./vite` (typed-keys codegen
+  `./server` (non-reactive translator for mail/jobs — same typed surface as the
+  client, sigx-free), `./vite` (typed-keys codegen
   + missing-translation build gate + HMR).
 
 ## Parallel work with git worktrees

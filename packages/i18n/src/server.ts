@@ -2,9 +2,16 @@
  * @sigx/i18n/server — a non-reactive, DI-free translator for server-only
  * localization: mail templates, queue jobs, API responses, PDFs.
  *
- * It reuses the exact same pure `translate` core (master fallback, locale chain)
- * and formatter as the client, but has zero dependency on sigx — no store, no
- * signals, no app — so it runs in a mailer worker with nothing else wired up.
+ * It reuses the exact same pure `translate` core (master fallback, locale chain),
+ * the same formatter, AND the same translator surface as the client — the proxy
+ * behind `useTranslation` is built here too, over a catalog tree instead of the
+ * reactive store (see `translator.ts` and its `TranslationSource`). So a mail
+ * template gets the literal key union and the completeness gate that the UI
+ * gets: rename a key in `mail.json` and the build fails, rather than the email.
+ *
+ * It still has zero dependency on sigx — no store, no signals, no app — so it
+ * runs in a mailer worker with nothing else wired up. `edge-clean.test.ts` pins
+ * that, and the `dist/server.js` size budget would blow if sigx crept in.
  *
  * **This entry is universal**: no `node:` imports, so it runs unchanged on
  * workerd, Deno, Bun and inside a bundled edge build (the deploy adapters'
@@ -14,13 +21,29 @@
  *
  * Server-only namespaces are simply files the client loader's glob never sees;
  * declare them as `serverOnly` on the Vite plugin to keep them out of the
- * client catalog tree entirely.
+ * client catalog tree entirely. They still reach the generated `Schema`, so
+ * they are typed here.
  */
 
-import { translate } from './translate.js';
+import { lookup, translateWith } from './translate.js';
 import { lightweightFormatter } from './formatter.js';
 import { resolveRequestLocale, type DetectionOptions, type RequestLike } from './detect.js';
-import type { Formatter, MessageTree, MissingInfo, Params } from './types.js';
+import {
+    createDynamicTranslator,
+    createTranslator,
+    type DynamicTranslator,
+    type KnownNamespace,
+    type TranslationSource,
+    type TypedTranslator
+} from './translator.js';
+import type {
+    Formatter,
+    MessageTree,
+    MissingInfo,
+    Params,
+    TranslateConfig,
+    TranslateOptions
+} from './types.js';
 
 export interface ServerI18nOptions {
     /** The catalog tree: `catalogs[locale][namespace]`. */
@@ -37,19 +60,55 @@ export interface ServerI18nOptions {
     onMissing?: (info: MissingInfo) => string;
 }
 
-/** Per-call scope override. */
-export interface ServerScope {
+/**
+ * Per-call overrides for an open-key server call: where to look, plus the
+ * author's fallback text. One bag rather than a separate scope and options
+ * argument — the client's `TranslateOptions` with the locale/namespace the
+ * server has to carry because it has no ambient locale state.
+ */
+export interface ServerTranslateOptions extends TranslateOptions {
+    /**
+     * Deliberately `string`, not `KnownLocale`: a server locale is negotiated
+     * from a request at runtime (`resolveRequestLocale` returns `string`), so
+     * narrowing it would force a cast on the normal path. The *namespace* below
+     * comes from source code, so it is checked.
+     */
     locale?: string;
-    namespace?: string;
+    namespace?: KnownNamespace;
+}
+
+/**
+ * A translator bound to one locale — what `createServerT().forLocale()` and a
+ * bound request BOTH produce. Binding a namespace on top of it is what yields
+ * the typed proxy, mirroring the client exactly:
+ *
+ * | | client | server |
+ * |---|---|---|
+ * | typed, namespace-bound | `useTranslation(ns)` | `.forNamespace(ns)` |
+ * | open-key, namespace-bound | `useDynamicTranslation(ns)` | `.dynamic(ns)` |
+ */
+export interface LocaleTranslator {
+    /** The locale this translator is bound to. */
+    readonly locale: string;
+    /** Open-key call. Keys are `string` because no namespace is statically bound. */
+    t(key: string, params?: Params, options?: Omit<ServerTranslateOptions, 'locale'>): string;
+    /** Does the key resolve? No `onMissing`, no dev warning. */
+    exists(key: string, options?: { namespace?: KnownNamespace }): boolean;
+    /** Bind a namespace → the typed proxy (`m.subject()`, `m('subject')`, `` `${m.subject}` ``). */
+    forNamespace<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): TypedTranslator<NS>;
+    /** Bind a namespace → open keys, with a call-site `default` and `exists`. */
+    dynamic<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): DynamicTranslator;
 }
 
 export interface ServerTranslator {
-    /** Translate a key. `scope.locale` defaults to the master locale. */
-    t(key: string, params?: Params, scope?: ServerScope): string;
-    /** Bind a locale (and optional namespace) into a simple `(key, params) => string`. */
-    forLocale(locale: string, scope?: Omit<ServerScope, 'locale'>): (key: string, params?: Params) => string;
     /** The message tree (locale → namespace → catalog), for inspection. */
     readonly messages: MessageTree;
+    /** One-off call. `options.locale` defaults to the master locale. */
+    t(key: string, params?: Params, options?: ServerTranslateOptions): string;
+    /** One-off existence probe. */
+    exists(key: string, options?: { locale?: string; namespace?: KnownNamespace }): boolean;
+    /** Bind a locale. Everything else hangs off the result. */
+    forLocale(locale: string): LocaleTranslator;
 }
 
 /**
@@ -58,7 +117,10 @@ export interface ServerTranslator {
  * ```ts
  * import catalogs from 'virtual:sigx-i18n/server-catalogs';
  * const t = createServerT({ catalogs, fallbackLocale: 'en', defaultNamespace: 'mail' });
- * const m = t.forLocale('sv', { namespace: 'mail' });
+ *
+ * const m = t.forLocale('sv').forNamespace('mail');
+ * m.subject();               // typed against the generated Schema
+ * m.welcome({ name: 'Åsa' });
  * ```
  */
 export function createServerT(options: ServerI18nOptions): ServerTranslator {
@@ -71,31 +133,35 @@ export function createServerT(options: ServerI18nOptions): ServerTranslator {
         onMissing
     } = options;
 
-    const tconfig = { fallbackLocale, localeFallbacks, formatter, onMissing };
+    const tconfig: TranslateConfig = { fallbackLocale, localeFallbacks, formatter, onMissing };
 
-    const t: ServerTranslator['t'] = (key, params, scope) =>
-        translate(
-            catalogs,
-            key,
-            params,
-            { locale: scope?.locale ?? fallbackLocale, namespace: scope?.namespace ?? defaultNamespace },
-            tconfig
-        );
+    // The seam: a locale-bound `TranslationSource` is all the shared translator
+    // factories need, so the client's proxy works verbatim over a catalog tree.
+    const sourceFor = (locale: string): TranslationSource => ({
+        translateKey: (namespace, key, params, opts) =>
+            translateWith(catalogs, key, params, { locale, namespace }, tconfig, opts),
+        hasKey: (namespace, key) => lookup(catalogs, key, { locale, namespace }, tconfig) !== undefined
+    });
 
-    const forLocale: ServerTranslator['forLocale'] = (locale, scope) => (key, params) =>
-        t(key, params, { locale, namespace: scope?.namespace });
+    const forLocale = (locale: string): LocaleTranslator => {
+        const source = sourceFor(locale);
+        return {
+            locale,
+            t: (key, params, opts) =>
+                source.translateKey(opts?.namespace ?? defaultNamespace, key, params, opts),
+            exists: (key, opts) => source.hasKey(opts?.namespace ?? defaultNamespace, key),
+            forNamespace: <NS extends KnownNamespace = KnownNamespace>(namespace?: NS) =>
+                createTranslator(source, namespace ?? defaultNamespace) as unknown as TypedTranslator<NS>,
+            dynamic: (namespace?: string) => createDynamicTranslator(source, namespace ?? defaultNamespace)
+        };
+    };
 
-    return { t, forLocale, messages: catalogs };
-}
-
-/** A translator already bound to one request's negotiated locale. */
-export interface RequestTranslator {
-    /** The locale detection resolved for this request. */
-    readonly locale: string;
-    /** Translate a key in this request's locale. */
-    t(key: string, params?: Params, scope?: Omit<ServerScope, 'locale'>): string;
-    /** Bind a namespace into a simple `(key, params) => string`. */
-    forNamespace(namespace: string): (key: string, params?: Params) => string;
+    return {
+        messages: catalogs,
+        t: (key, params, opts) => forLocale(opts?.locale ?? fallbackLocale).t(key, params, opts),
+        exists: (key, opts) => forLocale(opts?.locale ?? fallbackLocale).exists(key, opts),
+        forLocale
+    };
 }
 
 export interface RequestTOptions extends ServerI18nOptions {
@@ -111,27 +177,28 @@ export interface RequestTOptions extends ServerI18nOptions {
  * ```ts
  * const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
  *
- * export const greet = serverFn(async (rq) => requestT(rq.request).t('hello', { name: 'Ada' }));
+ * export const greet = serverFn(async (rq) =>
+ *     requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
+ * );
  * ```
+ *
+ * The result is the same {@link LocaleTranslator} `forLocale()` returns — the
+ * request only decides *which* locale, so there is nothing else to model.
  *
  * `@sigx/server` is deliberately NOT imported: the caller passes `rq.request`,
  * so this stays usable from any handler (and from a plain fetch handler in a
  * platform entry) with no dependency in either direction.
  */
-export function createRequestT(options: RequestTOptions): (request: RequestLike) => RequestTranslator {
+export function createRequestT(options: RequestTOptions): (request: RequestLike) => LocaleTranslator {
     const { supported, detection, ...serverOptions } = options;
     const translator = createServerT(serverOptions);
 
-    return request => {
-        const locale = resolveRequestLocale(request, {
-            ...detection,
-            supported,
-            fallbackLocale: serverOptions.fallbackLocale
-        });
-        return {
-            locale,
-            t: (key, params, scope) => translator.t(key, params, { ...scope, locale }),
-            forNamespace: namespace => translator.forLocale(locale, { namespace })
-        };
-    };
+    return request =>
+        translator.forLocale(
+            resolveRequestLocale(request, {
+                ...detection,
+                supported,
+                fallbackLocale: serverOptions.fallbackLocale
+            })
+        );
 }

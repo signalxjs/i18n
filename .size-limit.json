@@ -4,5 +4,10 @@
     "path": "packages/i18n/dist/index.js",
     "ignore": ["@sigx/store", "@sigx/reactivity", "@sigx/runtime-core", "sigx"],
     "limit": "5 KB"
+  },
+  {
+    "name": "@sigx/i18n/server (must stay sigx-free)",
+    "path": "packages/i18n/dist/server.js",
+    "limit": "3 KB"
   }
 ]

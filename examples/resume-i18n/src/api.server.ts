@@ -34,7 +34,12 @@ const requestT = createRequestT({
 export const greet = serverFn<string, string>({
     unguarded: true,
     handler(rq, name) {
-        const m = requestT(rq.request);
-        return `${m.t('greeting', { name })} ${m.t('signoff')} [${m.locale}]`;
+        const rt = requestT(rq.request);
+        // `forNamespace` gives the same typed proxy the client gets from
+        // `useTranslation` — `greeting`/`signoff` are checked against the
+        // generated Schema, so renaming a key in mail.json fails the build
+        // instead of the email.
+        const m = rt.forNamespace('mail');
+        return `${m.greeting({ name })} ${m.signoff()} [${rt.locale}]`;
     }
 });

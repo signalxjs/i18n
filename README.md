@@ -117,7 +117,7 @@ refetch lands, so the UI never flashes raw keys.
 | Entry | Purpose |
 |---|---|
 | `@sigx/i18n` | store, `useTranslation` accessor, `<T>` component, formatter, detectors, plugin — the universal binding surface (DOM, lynx, terminal, SSR) |
-| `@sigx/i18n/server` | non-reactive `createServerT()` / `createRequestT()` for mail templates, jobs & server functions — **universal** (no `node:` imports, runs on workerd/Deno/Bun) |
+| `@sigx/i18n/server` | non-reactive `createServerT()` / `createRequestT()` for mail templates, jobs & server functions — the **same typed translator** as the client, **universal** (no `node:` imports and no sigx at all, runs on workerd/Deno/Bun) |
 | `@sigx/i18n/server/node` | `loadCatalogs(dir)` — the filesystem catalog reader, the one Node-only entry |
 | `@sigx/i18n/vite` | typed-keys codegen + missing-translation build gate + HMR + the virtual catalog modules |
 
@@ -142,6 +142,38 @@ import { createServerT } from '@sigx/i18n/server';
 const t = createServerT({ catalogs, fallbackLocale: 'en', defaultNamespace: 'mail' });
 ```
 
+**It is the same translator the UI uses.** Bind a locale, then a namespace, and
+you get the identical proxy `useTranslation` returns — typed against the same
+generated `Schema`, so renaming a key in `mail.json` fails the *build* instead of
+the email:
+
+```ts
+const m = t.forLocale('sv').forNamespace('mail');
+
+m.subject();                 // typed, no params
+m.welcome({ name: 'Åsa' });  // typed params
+`${m.subject}`               // bare coercion, like in a component
+m('subject');                // string-key form — the key is still validated
+```
+
+For keys that don't exist at build time, `.dynamic(ns)` is the server's
+`useDynamicTranslation`: open keys, a call-site `default`, and `exists`.
+
+```ts
+const content = t.forLocale('sv').dynamic('content');
+content(block.labelKey, { count }, { default: block.label });
+content.exists(block.helpKey);
+```
+
+The correspondence is exact:
+
+| | client | server |
+|---|---|---|
+| locale-bound context | the store (ambient) | `.forLocale(locale)` / a bound request |
+| typed, namespace-bound | `useTranslation(ns)` | `.forNamespace(ns)` |
+| open keys + `default` + `exists` | `useDynamicTranslation(ns)` | `.dynamic(ns)` |
+| low-level open-key call | `store.translateKey(ns, key, …)` | `.t(key, params, { namespace, … })` |
+
 Declare which namespaces must never reach the browser on the plugin — they are
 dropped from `virtual:sigx-i18n/catalogs` and become the entire content of
 `virtual:sigx-i18n/server-catalogs`:
@@ -164,8 +196,15 @@ import catalogs from 'virtual:sigx-i18n/server-catalogs';
 
 const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
 
-export const greet = serverFn(async (rq) => requestT(rq.request).t('hello', { name: 'Ada' }));
+export const greet = serverFn(async (rq) =>
+    requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
+);
 ```
+
+A request only decides *which* locale, so what it hands back is the very same
+locale-bound translator `forLocale()` gives you — `.locale`, `.t`, `.exists`,
+`.forNamespace`, `.dynamic`. There is no separate request-translator type to
+learn.
 
 `@sigx/server` is not imported in either direction — you pass `rq.request`, so
 the same helper works from a plain fetch handler in a platform entry.

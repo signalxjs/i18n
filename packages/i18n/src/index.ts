@@ -19,14 +19,15 @@ export type {
     MissingInfo,
     ResolveScope,
     TranslateConfig,
+    TranslateOptions,
     Schema
 } from './types.js';
 
 export { lightweightFormatter, isPluralForms } from './formatter.js';
-export { translate, lookup, getMessage, localeChain, matchLocale } from './translate.js';
+export { translate, translateWith, lookup, getMessage, localeChain, matchLocale } from './translate.js';
 
 export { useI18n, useI18nConfig } from './store.js';
-export type { I18nStore, I18nRuntimeConfig, LocaleLoader, I18nLoadError, TranslateOptions } from './store.js';
+export type { I18nStore, I18nRuntimeConfig, LocaleLoader, I18nLoadError } from './store.js';
 
 export {
     detectLocale,
@@ -58,23 +59,22 @@ export type {
 export { installPersistSSR } from './persist-ssr.js';
 export type { PersistSSROptions, PersistSSRHandle } from './persist-ssr.js';
 
-export {
-    useTranslation,
-    useDynamicTranslation,
-    useLocale,
-    createTranslator,
-    createDynamicTranslator
-} from './accessor.js';
+// The client hooks (DI layer).
+export { useTranslation, useDynamicTranslation, useLocale } from './accessor.js';
+export type { LocaleControls } from './accessor.js';
+
+// The translator surface itself — shared verbatim with `@sigx/i18n/server`.
+export { createTranslator, createDynamicTranslator } from './translator.js';
 export type {
+    TranslationSource,
     Translator,
     TranslatorNode,
     TypedTranslator,
     DynamicTranslator,
-    LocaleControls,
     KnownLocale,
     KnownNamespace,
     KeysForNamespace
-} from './accessor.js';
+} from './translator.js';
 
 // Universal `<T>` component (renderer-agnostic — DOM, lynx, terminal, SSR).
 export { T, renderRich } from './component.js';

@@ -6,6 +6,66 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed / removed — BREAKING (server entry)
+- **One translation surface for the client and the server** (#42). The server
+  translator now *is* the client's translator: bind a locale, then a namespace,
+  and you get the identical proxy `useTranslation` returns — typed against the
+  same generated `Schema`. A mail template is key-checked like a component, so
+  renaming a key in `mail.json` fails the build instead of the email. Previously
+  `@sigx/i18n/server` had no `Schema` link at all: every key was a bare `string`.
+
+  The mechanism is a new internal `translator.ts` holding the `Schema`-derived
+  types and both translator factories behind one contract:
+
+  ```ts
+  interface TranslationSource {
+      translateKey(namespace, key, params?, options?): string;
+      hasKey(namespace, key): boolean;
+  }
+  ```
+
+  Two implementations — the reactive store and a server catalog tree — one
+  translator implementation. `createTranslator` already depended only on
+  `Pick<I18nStore, 'translateKey'>`, so it was structurally portable; it just
+  lived in a module that imports the store at value level.
+
+  Breaking, with no aliases or deprecation shims — this surface is unreleased:
+  - **`ServerScope` removed.** The third argument to `t()` is now
+    `ServerTranslateOptions` — the same `{ locale?, namespace? }` plus the
+    call-site `default` the client already had.
+  - **`RequestTranslator` removed.** `createRequestT()(request)` returns the same
+    `LocaleTranslator` as `createServerT().forLocale(locale)`; a request only
+    decides *which* locale, so there was nothing else to model. `createRequestT`
+    collapsed to a single expression as a result.
+  - **`forLocale(locale, scope?)` → `forLocale(locale)`**, returning a
+    `LocaleTranslator` rather than a bare `(key, params) => string`. Namespace
+    binding moved to `.forNamespace(ns)` on the result.
+  - **`forNamespace(ns)` returns the typed proxy**, not a bare function. It is
+    still callable as `m('key', params)`, but `m.key()`, `m.key({ … })` and
+    `` `${m.key}` `` now work too, and the key is validated.
+  - New on both: **`.dynamic(ns)`** (the server's `useDynamicTranslation` — open
+    keys, call-site `default`, `exists`) and **`.exists(key, options?)`**.
+- **`TranslateOptions` moved** from the store's exports to `types.js`; still
+  re-exported from `@sigx/i18n`, so only a deep import would notice.
+
+### Added
+- **`translateWith()`** (`@sigx/i18n`) — `translate` plus the per-call
+  `options.default`, formatted through the configured formatter like any catalog
+  string. The single place that knows how a call-site fallback behaves, so the
+  store and the server translator cannot drift.
+- **Three gates that make "the server entry is sigx-free" structural** rather
+  than an accident of the import graph — it became load-bearing once the server
+  started sharing the client's translator:
+  - `edge-clean.test.ts` walks the transitive source graph from `server.ts` and
+    fails if any module in it imports `@sigx/store`, `@sigx/reactivity`,
+    `@sigx/runtime-core`, or `sigx`. Two guard-the-guard cases keep it from going
+    vacuous, including one asserting the walk *does* find the store from
+    `accessor.ts`.
+  - A `.size-limit.json` budget on `dist/server.js` with **no** sigx `ignore`
+    list, so a sigx import blows the budget (currently 2.12 kB of 3 kB).
+  - `verify-pack` now imports `@sigx/i18n/server` from the packed tarball and
+    exercises the typed proxy, coercion, and a dynamic `default`.
+
 ### Fixed
 - **`checkCatalogs`/`buildManifest` no longer skip a namespace absent from the
   master locale** (#33). Both were driven by master entries, so `sv/legal.json`

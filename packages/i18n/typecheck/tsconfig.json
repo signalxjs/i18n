@@ -9,7 +9,8 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@sigx/i18n": ["../dist/index.d.ts"]
+      "@sigx/i18n": ["../dist/index.d.ts"],
+      "@sigx/i18n/server": ["../dist/server.d.ts"]
     }
   },
   "include": ["consumer.ts", "i18n.gen.d.ts"]

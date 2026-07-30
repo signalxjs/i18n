@@ -34,6 +34,22 @@ export interface Catalog {
 /** Interpolation params passed to `t(key, params)`. `count` drives plural selection. */
 export type Params = Record<string, unknown> & { count?: number };
 
+/**
+ * Per-call overrides for one translation, on the client and the server alike.
+ * Available wherever keys are OPEN — a typed key is guaranteed by the
+ * completeness gate to exist in the master catalog, so a fallback for it would
+ * be dead code.
+ */
+export interface TranslateOptions {
+    /**
+     * Text to use when the key resolves in no locale — the author's original
+     * string for a runtime-sourced message. Formatted like any catalog string
+     * (so `{name}` still interpolates), but it bypasses `onMissing` and its dev
+     * warning: an explicit call-site fallback means the miss is expected.
+     */
+    default?: string;
+}
+
 /** `messages[locale][namespace] -> Catalog`. Namespaces may be hierarchical (`admin/users`). */
 export type MessageTree = Record<string, Record<string, Catalog>>;
 
