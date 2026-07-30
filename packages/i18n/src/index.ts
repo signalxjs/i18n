@@ -24,6 +24,10 @@ export type {
 } from './types.js';
 
 export { lightweightFormatter, isPluralForms } from './formatter.js';
+
+// Layered catalogs — the ordered override axis, shared by the store and the server.
+export { composeCatalogs, composeAt, layerFor, flatten } from './layers.js';
+export type { LayeredMessages } from './layers.js';
 export { translate, translateWith, lookup, getMessage, localeChain, matchLocale } from './translate.js';
 
 export { useI18n, useI18nConfig } from './store.js';

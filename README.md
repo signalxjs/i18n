@@ -112,6 +112,53 @@ const { error, retry } = useLocale();      // reactive; also config.onLoadError
 `invalidate` is stale-while-revalidate: the old catalog keeps rendering until the
 refetch lands, so the UI never flashes raw keys.
 
+## Overriding a catalog you don't own
+
+A library or product ships default catalogs; a downstream app — or one per-tenant,
+white-label deployment of it — wants to change a handful of strings. Declare an
+ordered layer and override **individual keys**; everything else keeps coming from
+the layer below, including keys the base gains in a later version.
+
+```ts
+createI18n({
+  fallbackLocale: 'en',
+  layers: ['base', 'tenant'],                  // lowest → highest priority
+  load: (locale, ns) => import(`./locales/${locale}/${ns}.json`),
+  layerMessages: { tenant: await db.loadOverrides() }   // the whole bag, in one call
+});
+
+t.cart.title    // 'Basket'  — from tenant
+t.cart.empty    // still resolves from base
+```
+
+Overrides usually live in a database keyed by namespace, so `layerMessages` takes
+the tree whole. Swap it later with `store.setLayer('tenant', tree)`, or set one
+key with `store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'tenant' })`.
+A layer can have its own loader (`loaders: { tenant: … }`) to stay lazy.
+
+The server takes the same layers, so a white-label string is identical in an email
+and in the UI — and `withLayers` binds a layer **per request**, which is what a
+multi-tenant process needs:
+
+```ts
+const m = requestT(rq.request)
+    .withLayers({ tenant: await db.overridesFor(rq.tenantId) })
+    .forNamespace('mail');
+m.subject();   // tenant wording
+```
+
+**Precedence is locale outer, layer inner.** A `base` message in the requested
+locale beats a `tenant` override that exists only in a fallback locale — so a
+partly-translated override never drags text back to the master language, and a
+message is still formatted in the locale it was *found* in, which plural rules
+depend on.
+
+Both key spellings are interchangeable across layers: a flat `{"cart.title"}`
+override correctly shadows a nested `{cart:{title}}` base, and vice versa. Treat a
+registered catalog as immutable — composition is cached by catalog identity, so
+replace a catalog rather than mutating it. `store.explain('cart', 'title')` reports
+which `(layer, locale)` supplied a message when you need to ask why.
+
 ## Packages / entries
 
 | Entry | Purpose |

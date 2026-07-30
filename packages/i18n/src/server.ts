@@ -26,6 +26,7 @@
  */
 
 import { lookup, translateWith } from './translate.js';
+import { BASE_LAYER, composeAt, type LayeredMessages } from './layers.js';
 import { lightweightFormatter } from './formatter.js';
 import { resolveRequestLocale, type DetectionOptions, type RequestLike } from './detect.js';
 import {
@@ -37,6 +38,7 @@ import {
     type TypedTranslator
 } from './translator.js';
 import type {
+    Catalog,
     Formatter,
     MessageTree,
     MissingInfo,
@@ -46,8 +48,20 @@ import type {
 } from './types.js';
 
 export interface ServerI18nOptions {
-    /** The catalog tree: `catalogs[locale][namespace]`. */
+    /** The catalog tree: `catalogs[locale][namespace]`. Seeds the lowest layer. */
     catalogs: MessageTree;
+    /**
+     * Ordered override layers, lowest priority first — the same axis the client
+     * store has, so a tenant-overridden string is identical in a mail template
+     * and in the UI. Omit for single-source behaviour.
+     */
+    layers?: string[];
+    /**
+     * Seed whole layers at construction. `catalogs` fills the lowest layer, so
+     * this is where the overrides go: `layerCatalogs[layer][locale][namespace]`.
+     * For a layer that varies per request, use {@link LocaleTranslator.withLayers}.
+     */
+    layerCatalogs?: LayeredMessages;
     /** Master locale, used when a key is untranslated. */
     fallbackLocale: string;
     /** Default namespace when a call omits one. Default `'translation'`. */
@@ -98,6 +112,22 @@ export interface LocaleTranslator {
     forNamespace<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): TypedTranslator<NS>;
     /** Bind a namespace → open keys, with a call-site `default` and `exists`. */
     dynamic<NS extends KnownNamespace = KnownNamespace>(namespace?: NS): DynamicTranslator;
+    /**
+     * Layer extra catalogs on top, returning a new translator — the per-request
+     * form. `createRequestT` builds once outside the request and the request only
+     * picks a locale, so this is what makes a per-tenant override expressible:
+     *
+     * ```ts
+     * const m = requestT(rq.request)
+     *     .withLayers({ tenant: await db.overridesFor(rq.tenantId) })
+     *     .forNamespace('mail');
+     * ```
+     *
+     * The receiver is not modified, so one `createRequestT` safely serves many
+     * tenants. Composition is cached globally by catalog identity, so a tenant
+     * seen before costs a tree walk rather than a re-merge.
+     */
+    withLayers(trees: LayeredMessages): LocaleTranslator;
 }
 
 export interface ServerTranslator {
@@ -135,16 +165,45 @@ export function createServerT(options: ServerI18nOptions): ServerTranslator {
 
     const tconfig: TranslateConfig = { fallbackLocale, localeFallbacks, formatter, onMissing };
 
+    const layerOrder: readonly string[] = options.layers?.length ? options.layers : [BASE_LAYER];
+    const rootLayers: LayeredMessages = { ...options.layerCatalogs };
+    rootLayers[layerOrder[0]] ??= catalogs;
+
+    /**
+     * Flatten a layer stack into one effective tree. Every `(locale, ns)` goes
+     * through `composeAt`, whose global identity cache means a layer stack seen
+     * before is not re-merged — a repeat tenant costs this walk, not the merge.
+     *
+     * When only one layer contributes, the tree is returned BY IDENTITY, so the
+     * no-layers path allocates nothing and `messages` stays the very object the
+     * caller passed in.
+     */
+    const effectiveOf = (layered: LayeredMessages): MessageTree => {
+        const contributing = layerOrder.filter(layer => layered[layer]);
+        if (contributing.length <= 1) return layered[contributing[0]] ?? {};
+        const out: MessageTree = {};
+        for (const layer of contributing) {
+            const tree = layered[layer];
+            for (const locale of Object.keys(tree)) {
+                const bucket = (out[locale] ??= {});
+                for (const ns of Object.keys(tree[locale])) {
+                    if (!bucket[ns]) bucket[ns] = composeAt(layered, layerOrder, locale, ns) as Catalog;
+                }
+            }
+        }
+        return out;
+    };
+
     // The seam: a locale-bound `TranslationSource` is all the shared translator
     // factories need, so the client's proxy works verbatim over a catalog tree.
-    const sourceFor = (locale: string): TranslationSource => ({
+    const sourceFor = (tree: MessageTree, locale: string): TranslationSource => ({
         translateKey: (namespace, key, params, opts) =>
-            translateWith(catalogs, key, params, { locale, namespace }, tconfig, opts),
-        hasKey: (namespace, key) => lookup(catalogs, key, { locale, namespace }, tconfig) !== undefined
+            translateWith(tree, key, params, { locale, namespace }, tconfig, opts),
+        hasKey: (namespace, key) => lookup(tree, key, { locale, namespace }, tconfig) !== undefined
     });
 
-    const forLocale = (locale: string): LocaleTranslator => {
-        const source = sourceFor(locale);
+    const bind = (layered: LayeredMessages, tree: MessageTree, locale: string): LocaleTranslator => {
+        const source = sourceFor(tree, locale);
         return {
             locale,
             t: (key, params, opts) =>
@@ -152,12 +211,21 @@ export function createServerT(options: ServerI18nOptions): ServerTranslator {
             exists: (key, opts) => source.hasKey(opts?.namespace ?? defaultNamespace, key),
             forNamespace: <NS extends KnownNamespace = KnownNamespace>(namespace?: NS) =>
                 createTranslator(source, namespace ?? defaultNamespace) as unknown as TypedTranslator<NS>,
-            dynamic: (namespace?: string) => createDynamicTranslator(source, namespace ?? defaultNamespace)
+            dynamic: (namespace?: string) => createDynamicTranslator(source, namespace ?? defaultNamespace),
+            withLayers: extra => {
+                // A fresh stack; the receiver keeps its own, so one translator
+                // serves many tenants without them leaking into each other.
+                const merged: LayeredMessages = { ...layered, ...extra };
+                return bind(merged, effectiveOf(merged), locale);
+            }
         };
     };
 
+    const rootTree = effectiveOf(rootLayers);
+    const forLocale = (locale: string): LocaleTranslator => bind(rootLayers, rootTree, locale);
+
     return {
-        messages: catalogs,
+        messages: rootTree,
         t: (key, params, opts) => forLocale(opts?.locale ?? fallbackLocale).t(key, params, opts),
         exists: (key, opts) => forLocale(opts?.locale ?? fallbackLocale).exists(key, opts),
         forLocale

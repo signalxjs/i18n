@@ -10,7 +10,7 @@
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
-import { isPluralForms } from './formatter.js';
+import { flatten } from './layers.js';
 import type { Catalog, MessageValue } from './types.js';
 
 export type ParamType = 'string' | 'number' | 'date';
@@ -63,19 +63,10 @@ export interface CheckOptions {
 
 // ── Flattening + param extraction ───────────────────────────────────────────
 
-/** Flatten a catalog to dotted-key → leaf message. */
-export function flatten(catalog: Catalog, prefix = ''): Map<string, MessageValue> {
-    const out = new Map<string, MessageValue>();
-    for (const [key, value] of Object.entries(catalog)) {
-        const path = prefix ? `${prefix}.${key}` : key;
-        if (typeof value === 'string' || isPluralForms(value)) {
-            out.set(path, value as MessageValue);
-        } else if (value && typeof value === 'object') {
-            for (const [k, v] of flatten(value as Catalog, path)) out.set(k, v);
-        }
-    }
-    return out;
-}
+// `flatten` lives in `layers.ts`: the layer composer needs it too, and that
+// module must stay `node:`-free for the server entry. Re-exported so this
+// module's public surface is unchanged.
+export { flatten };
 
 const TOKEN = /\{\s*(\w+)\s*(?:,\s*(number|date|time)\s*)?\}/g;
 
