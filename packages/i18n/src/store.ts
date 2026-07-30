@@ -161,14 +161,18 @@ function resolveConfig(): I18nRuntimeConfig {
 
 // A load is identified by (layer, locale, ns): the base catalog and an override
 // layer can each load the same pair without one silently suppressing the other.
-const loadKey = (layer: string, l: string, ns: string) => `${layer} ${l} ${ns}`;
-// The namespace goes LAST and is the only field that may contain a space (it
-// comes from a file path); a layer name and a BCP-47 locale never do. So split
-// on the first two spaces and keep the remainder whole.
+//
+// NUL as the delimiter, not a space. A namespace comes from a file path and a
+// layer name is chosen by the consumer, so either could contain a space — and a
+// space-delimited key would then decode to the wrong fields, breaking
+// `invalidate` and `setLayer`. NUL is unrepresentable in a filename on every
+// real filesystem and invalid in BCP-47, so the encoding is unambiguous by
+// construction rather than by a rule someone has to obey.
+const KEY_SEP = '\u0000';
+const loadKey = (layer: string, l: string, ns: string) => `${layer}${KEY_SEP}${l}${KEY_SEP}${ns}`;
 const parseKey = (key: string): [layer: string, locale: string, ns: string] => {
-    const a = key.indexOf(' ');
-    const b = key.indexOf(' ', a + 1);
-    return [key.slice(0, a), key.slice(a + 1, b), key.slice(b + 1)];
+    const parts = key.split(KEY_SEP);
+    return [parts[0], parts[1], parts.slice(2).join(KEY_SEP)];
 };
 
 /**
@@ -241,30 +245,22 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     // writes to a tree nothing reads — the consumer sees no error and no effect.
     // These are the assumptions the key space and the composer rest on; warn
     // rather than let them fail silently.
+    // One guard, at every door. `composeAt` consults only `layerOrder`, so a name
+    // outside it writes to a tree nothing reads: no error, no effect. Warned once
+    // per offending name so a bulk seed doesn't spam.
+    const warnedLayers = new Set<string>();
+    function checkLayer(layer: string, where: string): void {
+        if (!__DEV__ || layerOrder.includes(layer) || warnedLayers.has(layer + where)) return;
+        warnedLayers.add(layer + where);
+        console.warn(
+            `[@sigx/i18n] ${where} names layer "${layer}", which is not in ` +
+                `[${layerOrder.join(', ')}] — it is stored but never resolved from.`
+        );
+    }
+
     if (__DEV__) {
-        for (const layer of layerOrder) {
-            if (layer.includes(' ')) {
-                console.warn(
-                    `[@sigx/i18n] layer name "${layer}" contains a space. Load keys are ` +
-                        `"<layer> <locale> <namespace>", so invalidate() and setLayer() will misbehave.`
-                );
-            }
-        }
-        if (!layerOrder.includes(defaultLayer)) {
-            console.warn(
-                `[@sigx/i18n] defaultLayer "${defaultLayer}" is not in layers ` +
-                    `[${layerOrder.join(', ')}], so \`load\` and \`addMessages\` would write to a ` +
-                    `layer nothing resolves from.`
-            );
-        }
-        for (const layer of Object.keys(config.loaders ?? {})) {
-            if (!layerOrder.includes(layer)) {
-                console.warn(
-                    `[@sigx/i18n] loaders["${layer}"] names a layer not in ` +
-                        `[${layerOrder.join(', ')}] — it will never be consulted.`
-                );
-            }
-        }
+        checkLayer(defaultLayer, 'defaultLayer');
+        for (const layer of Object.keys(config.loaders ?? {})) checkLayer(layer, 'loaders');
     }
 
     /** Recompose the effective catalog for one pair. Single-layer returns by identity. */
@@ -291,6 +287,11 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
      * again, or `setLayer`).
      */
     function writeLayer(layer: string, locale: string, ns: string, catalog: Catalog): void {
+        // Every layer write funnels through here — `addMessages`, `setLayer`,
+        // `layerMessages`, `initialMessages` and a loader result alike — so the
+        // membership check belongs at this one door rather than at each caller,
+        // where it is only a matter of time before one is forgotten.
+        checkLayer(layer, 'a catalog write');
         const tree = (layerTrees[layer] ??= {});
         if (!tree[locale]) tree[locale] = {};
         tree[locale][ns] = catalog;
@@ -437,12 +438,8 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
          * ```
          */
         setLayer(layer: string, tree: MessageTree): void {
-            if (__DEV__ && !layerOrder.includes(layer)) {
-                console.warn(
-                    `[@sigx/i18n] setLayer("${layer}") names a layer not in ` +
-                        `[${layerOrder.join(', ')}] — the tree is stored but never resolved from.`
-                );
-            }
+            // Checked here as well as in `writeLayer`: an empty tree writes nothing.
+            checkLayer(layer, 'setLayer');
             // Supersede this layer's in-flight loads FIRST. A request already
             // running would otherwise resolve after the swap and call
             // `writeLayer` with what it fetched, quietly reinstating the tree

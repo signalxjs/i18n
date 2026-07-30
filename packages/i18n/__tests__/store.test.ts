@@ -622,24 +622,19 @@ describe('store — layer misconfiguration is loud, not silent', () => {
         return w;
     };
 
+    const notInLayers = (layer: string) => expect.stringContaining(`names layer "${layer}", which is not in`);
+
     it('warns when defaultLayer is not one of the declared layers', () => {
         const warn = spyWarn();
         setup({ fallbackLocale: 'en', layers: ['base', 'tenant'], defaultLayer: 'typo' });
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('defaultLayer "typo" is not in layers'));
-        warn.mockRestore();
-    });
-
-    it('warns when a layer name contains a space, which the load key cannot survive', () => {
-        const warn = spyWarn();
-        setup({ fallbackLocale: 'en', layers: ['base', 'my tenant'] });
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('contains a space'));
+        expect(warn).toHaveBeenCalledWith(notInLayers('typo'));
         warn.mockRestore();
     });
 
     it('warns when a loader names a layer that will never be consulted', () => {
         const warn = spyWarn();
         setup({ fallbackLocale: 'en', layers: ['base'], loaders: { ghost: async () => ({}) } });
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('loaders["ghost"]'));
+        expect(warn).toHaveBeenCalledWith(notInLayers('ghost'));
         warn.mockRestore();
     });
 
@@ -648,7 +643,59 @@ describe('store — layer misconfiguration is loud, not silent', () => {
         const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
         warn.mockClear();
         store.setLayer('nope', { en: { cart: { title: 'X' } } });
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('setLayer("nope")'));
+        expect(warn).toHaveBeenCalledWith(notInLayers('nope'));
+        warn.mockRestore();
+    });
+
+    // Every layer write funnels through `writeLayer`, so these are covered by the
+    // one guard rather than by a check remembered at each call site.
+    it('warns when addMessages names an undeclared layer', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        warn.mockClear();
+        store.addMessages('en', 'cart', { title: 'X' }, { layer: 'typo' });
+        expect(warn).toHaveBeenCalledWith(notInLayers('typo'));
+        warn.mockRestore();
+    });
+
+    it('warns when layerMessages names an undeclared layer', () => {
+        const warn = spyWarn();
+        setup({
+            fallbackLocale: 'en',
+            layers: ['base', 'tenant'],
+            layerMessages: { tenannt: { en: { cart: { title: 'X' } } } } // typo
+        });
+        expect(warn).toHaveBeenCalledWith(notInLayers('tenannt'));
+        warn.mockRestore();
+    });
+
+    // The load key is NUL-delimited, so a space in a layer name — or in a
+    // namespace, which comes from a file path — is simply not a hazard any more.
+    // Nothing to warn about; it has to WORK.
+    it('handles a layer name containing a space', async () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'my tenant'] });
+        store.addMessages('en', 'cart', { title: 'Cart', empty: 'Empty' });
+        store.addMessages('en', 'cart', { title: 'Basket' }, { layer: 'my tenant' });
+
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        expect(store.translateKey('cart', 'empty')).toBe('Empty');
+        expect(store.explain('cart', 'title')).toEqual({ layer: 'my tenant', locale: 'en' });
+        expect(warn).not.toHaveBeenCalled();
+
+        // …and the key round-trips through invalidate's parse.
+        await store.invalidate('en', 'cart', 'my tenant');
+        expect(store.translateKey('cart', 'title')).toBe('Basket');
+        warn.mockRestore();
+    });
+
+    it('handles a namespace containing a space', () => {
+        const warn = spyWarn();
+        const { store } = setup({ fallbackLocale: 'en', layers: ['base', 'tenant'] });
+        store.addMessages('en', 'my ns', { title: 'Cart' });
+        store.addMessages('en', 'my ns', { title: 'Basket' }, { layer: 'tenant' });
+        expect(store.translateKey('my ns', 'title')).toBe('Basket');
+        expect(warn).not.toHaveBeenCalled();
         warn.mockRestore();
     });
 
