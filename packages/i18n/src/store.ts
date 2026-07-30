@@ -210,11 +210,6 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
     // Namespaces requested so far (config-listed, plus per-consumer `ensureNamespace`
     // / `loadNamespace`). Each loads only on first use → per-surface payload split.
     const activeNamespaces = new Set<string>(config.namespaces ?? []);
-    // `(ns, locale)` pairs `ensureNamespace` has already requested — the dedupe
-    // for the hot path, since a render calls it on every pass. Keyed by pair, not
-    // by namespace: a preview pinned to `sv` must still load a namespace the app
-    // already loaded for `en`.
-    const ensured = new Set<string>();
     // Completed loads and in-flight loads, keyed (locale,ns) — dedupe + no refetch.
     const loaded = new Set<string>();
     const inflight = new Map<string, Promise<void>>();
@@ -579,14 +574,16 @@ export const useI18n = defineStore('i18n', (ctx: SetupStoreContext) => {
      * `setLocale` round trip: `ensureNamespace('cart', 'sv')` loads `sv` + the
      * master locale and leaves the active locale alone.
      *
-     * Deduped per (ns, locale) — a namespace already ensured for `en` still loads
-     * when a preview pane asks for it in `sv`.
+     * Dedupe is `loadOne`'s job, not this function's, and deliberately so: it is
+     * keyed `(layer, locale, ns)`, so a namespace already loaded for `en` still
+     * loads when a preview asks for it in `sv`, an already-loaded pair costs
+     * nothing, and a caller arriving mid-flight gets the REAL pending promise to
+     * await rather than an instantly-resolved one. A second guard here would also
+     * have to be invalidated in lockstep with `loaded` — and would silently
+     * suppress the refetch after `invalidate()` if it ever wasn't.
      */
     function ensureNamespace(ns: string, locale: string = state.locale): Promise<void> {
         activeNamespaces.add(ns);
-        const key = ns + KEY_SEP + locale;
-        if (ensured.has(key)) return Promise.resolve();
-        ensured.add(key);
         return loadNamespaceFor(ns, locale);
     }
 

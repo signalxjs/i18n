@@ -135,8 +135,8 @@ Off a component, it is the **same call the server makes** — that is the whole
 point:
 
 ```ts
-useI18n().forLocale('sv').forNamespace('cart');       // client, reactive
-createServerT({ … }).forLocale('sv').forNamespace('cart');  // server, not
+useI18n().forLocale('sv').forNamespace('cart');             // client — reactive
+createServerT({ … }).forLocale('sv').forNamespace('cart');  // server — not reactive
 ```
 
 `.t()`, `.exists()` and `.dynamic()` hang off both. To warm a catalog ahead of a

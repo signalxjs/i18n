@@ -203,6 +203,49 @@ describe('ensureNamespace(ns, locale)', () => {
         expect(load).toHaveBeenCalledTimes(2);
     });
 
+    it('a second caller awaits the IN-FLIGHT load rather than resolving early', async () => {
+        // The dedupe belongs to `loadOne`, keyed (layer, locale, ns), which hands
+        // back the pending promise. A guard in `ensureNamespace` would return an
+        // already-resolved one, and the second caller would render before its
+        // catalog existed.
+        let release!: () => void;
+        const gate = new Promise<void>(r => (release = r));
+        const load = vi.fn(async (locale: string) => {
+            await gate;
+            return { title: `${locale}/cart` };
+        });
+        const store = setup({ load }, () => useI18n());
+
+        const first = store.ensureNamespace('cart', 'sv'); // in flight, not awaited
+        const second = store.ensureNamespace('cart', 'sv'); // must join it
+
+        let secondSettled = false;
+        void second.then(() => (secondSettled = true));
+        await tick();
+        expect(secondSettled).toBe(false); // did NOT resolve ahead of the load
+
+        release();
+        await Promise.all([first, second]);
+        expect(store.translateKey('cart', 'title', undefined, { locale: 'sv' })).toBe('sv/cart');
+        expect(load).toHaveBeenCalledTimes(2); // sv + master, once each
+    });
+
+    it('refetches after invalidate — the pair is no longer marked loaded', async () => {
+        let published = 'v1';
+        const load = vi.fn(async (locale: string) => ({ title: `${locale}:${published}` }));
+        const store = setup({ load }, () => useI18n());
+
+        await store.ensureNamespace('cart', 'sv');
+        const afterFirst = load.mock.calls.length;
+
+        published = 'v2';
+        await store.invalidate('sv', 'cart');
+        await store.ensureNamespace('cart', 'sv'); // must not short-circuit
+
+        expect(load.mock.calls.length).toBeGreaterThan(afterFirst);
+        expect(store.translateKey('cart', 'title', undefined, { locale: 'sv' })).toBe('sv:v2');
+    });
+
     it('invalidate and retry reach a pinned pair', async () => {
         let published = 'v1';
         const load = vi.fn(async (locale: string) => ({ title: `${locale}:${published}` }));
