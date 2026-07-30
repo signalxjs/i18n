@@ -13,7 +13,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "sigx",
+    "jsxImportSource": "@sigx/runtime-core",
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],

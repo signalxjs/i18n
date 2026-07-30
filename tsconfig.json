@@ -5,7 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "sigx",
+    "jsxImportSource": "@sigx/runtime-core",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,

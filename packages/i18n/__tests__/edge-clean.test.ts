@@ -170,10 +170,11 @@ describe('edge cleanliness', () => {
     });
 
     it('resolves .tsx modules, so the walk cannot skip one in silence', async () => {
-        // `component.tsx` is the package's only .tsx source and it imports `sigx`
-        // directly. A walk that resolved `./component.js` to `component.ts` only
-        // would drop it — and a dropped module cannot be reported as an offender,
-        // which is a false PASS. Walking from the root entry must find it.
+        // `component.tsx` is the package's only .tsx source, and it imports the
+        // sigx tier (`@sigx/runtime-core`). A walk that resolved `./component.js`
+        // to `component.ts` only would drop it — and a dropped module cannot be
+        // reported as an offender, which is a false PASS. Walking from the root
+        // entry must find it, and must see its import.
         const { files, unresolved } = await graphFrom('index.ts');
         expect(unresolved).toEqual([]);
         expect(files).toContain('component.tsx');
@@ -183,5 +184,64 @@ describe('edge cleanliness', () => {
             if (SIGX_IMPORT.test(await readFile(join(SRC, name), 'utf-8'))) offenders.push(name);
         }
         expect(offenders).toContain('component.tsx');
+    });
+
+    // ── The core entry never reaches for the `sigx` umbrella ─────────────────
+    // `@sigx/i18n` (the root entry) claims renderer-agnosticism: `<T>` "touches no
+    // DOM API, so it works on any sigx renderer unchanged". The `sigx` umbrella is
+    // the DOM meta-package — its entry is `import '@sigx/runtime-dom/platform'`,
+    // and `@sigx/runtime-dom` declares `global { namespace JSX { IntrinsicElements
+    // … } }`. So a single `sigx` specifier anywhere in this entry's graph types
+    // every JSX element in EVERY consumer against the DOM intrinsics, breaking
+    // lynx/terminal apps wholesale — and at runtime builds `<T>` with the DOM JSX
+    // factory instead of the host's. Renderer-neutral homes exist for all of it
+    // (`@sigx/runtime-core`, `@sigx/reactivity`, `@sigx/store`). See issue #47.
+
+    /** A bare `sigx` / `sigx/...` specifier — the umbrella, not the `@sigx/*` tier. */
+    const UMBRELLA_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"]sigx(?:\/[^'"]*)?['"]/;
+
+    it('keeps the whole core @sigx/i18n graph free of the sigx umbrella', async () => {
+        const { files, unresolved } = await graphFrom('index.ts');
+        expect(unresolved).toEqual([]);
+        // Sanity: the walk must reach the modules that would plausibly regress,
+        // or the assertion below proves nothing.
+        expect(files).toContain('component.tsx');
+        expect(files).toContain('store.ts');
+
+        const offenders: string[] = [];
+        for (const name of files) {
+            if (UMBRELLA_IMPORT.test(await readFile(join(SRC, name), 'utf-8'))) offenders.push(name);
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('the umbrella pattern is not vacuous, and does not fire on the @sigx/* tier', () => {
+        // Guards the guard. The `@sigx/…` cases are the ones that matter: a
+        // pattern that flagged them would make the test above fail permanently
+        // and get "fixed" by deleting it.
+        expect(UMBRELLA_IMPORT.test(`import { component } from 'sigx';`)).toBe(true);
+        expect(UMBRELLA_IMPORT.test(`import { jsx } from 'sigx/jsx-runtime';`)).toBe(true);
+        expect(UMBRELLA_IMPORT.test(`import 'sigx';`)).toBe(true);
+        expect(UMBRELLA_IMPORT.test(`const s = await import('sigx/internals');`)).toBe(true);
+        expect(UMBRELLA_IMPORT.test(`import { component } from '@sigx/runtime-core';`)).toBe(false);
+        expect(UMBRELLA_IMPORT.test(`import { computed } from '@sigx/reactivity';`)).toBe(false);
+        expect(UMBRELLA_IMPORT.test(`import { defineStore } from '@sigx/store';`)).toBe(false);
+        expect(UMBRELLA_IMPORT.test(`import { persist } from '@sigx/store/persist';`)).toBe(false);
+    });
+
+    it('builds JSX with the renderer-neutral factory, not the umbrella', async () => {
+        // The `jsx()` import is injected by the compiler, so it is invisible to the
+        // source walk above — the umbrella can come back through configuration
+        // alone, with no import to grep for. Both spellings have to be pinned: the
+        // tsconfig one governs `tsgo --emitDeclarationOnly`, the vite.config one
+        // governs what lands in `dist/index.js`.
+        const PKG = join(SRC, '..');
+        const tsconfig = await readFile(join(PKG, 'tsconfig.json'), 'utf-8');
+        expect(JSON.parse(tsconfig).compilerOptions.jsxImportSource).toBe('@sigx/runtime-core');
+
+        // `defineLibConfig` DEFAULTS `importSource` to `'sigx'`, so this must be
+        // set explicitly — dropping the line is the regression, not just editing it.
+        const viteConfig = await readFile(join(PKG, 'vite.config.ts'), 'utf-8');
+        expect(viteConfig).toMatch(/importSource:\s*'@sigx\/runtime-core'/);
     });
 });

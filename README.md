@@ -21,9 +21,10 @@ Full guides, API reference and live examples → **<https://sigx.dev/i18n/>**
 pnpm add @sigx/i18n
 ```
 
-`@sigx/i18n` peers on the sigx runtime (`@sigx/reactivity`, `@sigx/runtime-core`),
-`@sigx/store`, and `sigx` (for the `<T>` component). `./vite` needs `vite` +
-`@sigx/vite`; `./server` has no sigx dependency.
+`@sigx/i18n` peers on the sigx runtime (`@sigx/reactivity`, `@sigx/runtime-core`)
+and `@sigx/store` — never the `sigx` umbrella, which is the DOM meta-package, so
+the core entry stays renderer-neutral (see [Works on any sigx renderer](#works-on-any-sigx-renderer-incl-lynx)).
+`./vite` needs `vite` + `@sigx/vite`; `./server` has no sigx dependency at all.
 
 ## Quick start
 
@@ -363,7 +364,11 @@ components' chunks, which load on first upgrade and never before.
 ## Works on any sigx renderer (incl. lynx)
 
 The accessor and `<T>` render *text* and depend only on `@sigx/runtime-core`, so
-they run on every sigx renderer unchanged. On **lynx**, place them inside a
+they run on every sigx renderer unchanged. Nothing in the core entry imports the
+`sigx` umbrella — not at runtime, not in the emitted `.d.ts`, and not as the JSX
+factory — so importing `@sigx/i18n` never pulls `@sigx/runtime-dom`'s global
+`JSX.IntrinsicElements` into a non-DOM app. `edge-clean.test.ts` pins this.
+On **lynx**, place them inside a
 `<text>` host (like all lynx text), inject a native-locale detector, and pass
 `@sigx/lynx-storage` for persistence:
 

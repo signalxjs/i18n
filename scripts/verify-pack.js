@@ -127,9 +127,15 @@ function main() {
     );
     // @sigx/i18n declares the sigx runtime tier + @sigx/store as (non-optional)
     // peers — satisfy them from npm so the import smoke can resolve.
+    //
+    // The `sigx` umbrella is deliberately NOT in this list. It is the DOM
+    // meta-package, and @sigx/i18n's whole claim is that it works on any
+    // renderer — so the scratch app installs the renderer-neutral tier only, and
+    // the smoke below fails to resolve if anything in the published core entry
+    // reaches for the umbrella (issue #47).
     const peers = readJson(join(rootDir, 'packages/i18n/package.json')).peerDependencies;
     const catalog = readCatalog();
-    for (const peer of ['@sigx/reactivity', '@sigx/runtime-core', '@sigx/store', 'sigx']) {
+    for (const peer of ['@sigx/reactivity', '@sigx/runtime-core', '@sigx/store']) {
         deps[peer] = resolveSpec(peer, peers[peer], catalog);
     }
     const appPkg = {
