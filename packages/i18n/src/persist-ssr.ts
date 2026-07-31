@@ -44,8 +44,8 @@ export interface PersistSSROptions {
      * (the lynx BG runtime, a terminal renderer, SSR) you **must** pass a backend
      * or the locale won't survive a restart, with nothing logged either way.
      *
-     * May be async — `StorageLike`'s `getItem`/`setItem`/`removeItem` all accept
-     * a promise, so `@sigx/lynx-storage` can be passed as-is. Hydration is
+     * May be async — `StorageLike`'s `getItem`/`setItem`/`removeItem` may each
+     * return a promise, so `@sigx/lynx-storage` can be passed as-is. Hydration is
      * awaited and applied as one atomic patch before saving resumes (see the
      * ordering note at the top of this module).
      */

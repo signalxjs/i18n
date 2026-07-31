@@ -387,7 +387,7 @@ app.use(createI18n({
 ```
 
 `persistence.storage` may be **async** — `StorageLike`'s `getItem`/`setItem`/
-`removeItem` all accept a promise, so `@sigx/lynx-storage` goes in as-is;
+`removeItem` may each return a promise, so `@sigx/lynx-storage` goes in as-is;
 hydration is awaited and applied as one atomic patch before saving resumes.
 Passing it is not optional on lynx: this package selects no backend of its own,
 and with no Web-Storage-shaped global present persistence silently no-ops, so

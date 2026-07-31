@@ -17,8 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   Documented alongside it, both previously unstated and both load-bearing on
   non-DOM renderers: an **async** backend is supported (`StorageLike`'s
-  `getItem`/`setItem`/`removeItem` all accept a promise, so `@sigx/lynx-storage`
-  works as-is, with hydration awaited and applied as one atomic patch), and with
+  `getItem`/`setItem`/`removeItem` may each return a promise, so
+  `@sigx/lynx-storage` works as-is, with hydration awaited and applied as one
+  atomic patch), and with
   no Web-Storage-shaped global present persistence **silently no-ops** — the
   locale does not survive a restart and nothing is logged. The README's lynx
   section says the same, plus that `Detector.detect` is synchronous, so an async
