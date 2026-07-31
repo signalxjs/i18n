@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+- **`persistence.storage` no longer claims a default this package doesn't own**
+  (#51). The JSDoc said "Default `localStorage`", but `@sigx/i18n` never touches
+  `localStorage` — it passes the option straight to `@sigx/store`'s `persist`,
+  which resolves the default. Restating someone else's implementation detail as
+  our contract meant their probe could change and our docs would silently be
+  wrong. Now says what is true: we select no backend, and omitting it defers to
+  `@sigx/store`.
+
+  Documented alongside it, both previously unstated and both load-bearing on
+  non-DOM renderers: an **async** backend is supported (`StorageLike`'s
+  `getItem`/`setItem`/`removeItem` may each return a promise, so
+  `@sigx/lynx-storage` works as-is, with hydration awaited and applied as one
+  atomic patch), and with
+  no Web-Storage-shaped global present persistence **silently no-ops** — the
+  locale does not survive a restart and nothing is logged. The README's lynx
+  section says the same, plus that `Detector.detect` is synchronous, so an async
+  native locale goes through `initialLocale` / `await setLocale()` instead.
+
 ## [0.3.1] - 2026-07-31
 
 A single-issue patch: `@sigx/i18n` is now importable from a non-DOM sigx renderer.
