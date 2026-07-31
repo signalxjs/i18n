@@ -386,6 +386,17 @@ app.use(createI18n({
 }));
 ```
 
+`persistence.storage` may be **async** — `StorageLike`'s `getItem`/`setItem`/
+`removeItem` all accept a promise, so `@sigx/lynx-storage` goes in as-is;
+hydration is awaited and applied as one atomic patch before saving resumes.
+Passing it is not optional on lynx: this package selects no backend of its own,
+and with no Web-Storage-shaped global present persistence silently no-ops, so
+the locale won't survive a restart and nothing is logged either way.
+
+`detect()` is synchronous. If the native locale is only available
+asynchronously, resolve it before creating the store and pass `initialLocale`,
+or `await store.setLocale(native)` once it arrives.
+
 ## License
 
 MIT © Andreas Ekdahl

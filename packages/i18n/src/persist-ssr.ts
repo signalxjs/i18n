@@ -31,7 +31,24 @@ export interface PersistSSROptions {
     persist?: boolean;
     /** Storage key for the persisted locale. Default `sigx:i18n`. */
     storageKey?: string;
-    /** Storage backend. Default `localStorage` (no-op under SSR). */
+    /**
+     * Storage backend for the persisted locale.
+     *
+     * This package picks none: the value is passed straight to `@sigx/store`'s
+     * `persist`, and omitting it leaves the choice to `@sigx/store` — today
+     * `globalThis.localStorage` when present, otherwise persistence is a silent
+     * no-op. We deliberately don't restate that default as a promise of ours; it
+     * is theirs to change.
+     *
+     * The practical consequence: on a runtime with no Web-Storage-shaped global
+     * (the lynx BG runtime, a terminal renderer, SSR) you **must** pass a backend
+     * or the locale won't survive a restart, with nothing logged either way.
+     *
+     * May be async — `StorageLike`'s `getItem`/`setItem`/`removeItem` all accept
+     * a promise, so `@sigx/lynx-storage` can be passed as-is. Hydration is
+     * awaited and applied as one atomic patch before saving resumes (see the
+     * ordering note at the top of this module).
+     */
     storage?: StorageLike;
     /**
      * Transfer the server-rendered locale (and, unless `transferMessages` is
