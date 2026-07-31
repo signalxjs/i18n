@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-31
+
+A single-issue patch: `@sigx/i18n` is now importable from a non-DOM sigx renderer.
+Purely a fix — no API change, and DOM apps behave exactly as before.
+
 ### Fixed
 - **The core entry no longer reaches for the `sigx` umbrella** (#47) — `@sigx/i18n`
   could not be imported at all from a non-DOM renderer. `sigx` is the DOM
