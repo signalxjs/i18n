@@ -94,7 +94,12 @@ pnpm lint         # oxlint
 pnpm lint:fix
 pnpm size         # size-limit bundle-size check
 pnpm verify:pack  # verify npm pack output is sane
+pnpm verify:bytes # reject raw control bytes in src/ and dist/
 ```
+
+`verify:bytes` also runs at the end of the package build, so `dist/` is gated on
+every build — including the release one. A raw NUL there parses in Node and kills
+the whole bundle on QuickJS-family engines (lynx/PrimJS); see issue #53.
 
 To run a package script: `pnpm --filter <package-name> <script>`.
 

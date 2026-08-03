@@ -6,6 +6,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **A raw NUL byte no longer ships in `dist/index.js`** (#53). `<T>`'s
+  (namespace, locale) cache key was written with a **literal U+0000** pasted into
+  the source instead of an escape, and esbuild preserves template-literal raw
+  text — so the byte travelled verbatim into the published bundle. Node parses it
+  without complaint. QuickJS-family engines do not: PrimJS, which lynx runs its
+  background bundle on, treats a raw NUL as end-of-string while tokenizing, so
+  **any lynx app that imported `@sigx/i18n` failed to boot at all** —
+  `loadCard failed SyntaxError: unexpected end of string`, with no error boundary
+  and no fallback, just a dead bundle. `0.3.1` and `0.3.2` are both affected.
+
+  The key is now two compared fields rather than one delimited string, so there
+  is no delimiter to get wrong: nothing ever decoded the pair, and joining them
+  also allocated a throwaway string on every render of every `<T>` — one per list
+  row, per pass. Behaviour is unchanged and `dist/index.js` gets slightly smaller.
+  `store.ts`'s `KEY_SEP` keeps its NUL delimiter, which it always spelled as a
+  proper escape and which it genuinely needs, since it decodes the key it builds.
+
+### Changed
+- **Builds now reject raw control bytes** (#53). `scripts/check-control-bytes.mjs`
+  scans `dist/` at the end of the package build — the release workflow builds and
+  publishes without running `verify:pack`, so a check that lived only there would
+  not have stopped this release — and a vitest guard scans `src/` on every test
+  run. Both call the same detector. Run it by hand with `pnpm verify:bytes`.
+
 ## [0.3.2] - 2026-08-03
 
 A single-issue patch: `@sigx/i18n` no longer requires an `Intl` global, so plural

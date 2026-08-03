@@ -39,7 +39,7 @@
         "node": "^20.19.0 || >=22.12.0"
     },
     "scripts": {
-        "build": "vite build && tsgo --emitDeclarationOnly",
+        "build": "vite build && tsgo --emitDeclarationOnly && node ../../scripts/check-control-bytes.mjs dist",
         "dev": "vite build --watch"
     },
     "keywords": [
