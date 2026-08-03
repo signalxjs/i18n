@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-03
+
+A single-issue patch: `@sigx/i18n` no longer requires an `Intl` global, so plural
+keys render on engines that lack one. No API change, and on engines that have
+`Intl` the output is identical.
+
 ### Fixed
 - **`Intl` is no longer assumed to exist** (#54). The default formatter constructed
   `Intl.PluralRules` and `Intl.NumberFormat` unconditionally, so on an engine without
