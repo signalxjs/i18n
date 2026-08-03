@@ -404,9 +404,9 @@ rather than throwing, so a plural key never takes a render down:
 
 | Needs | With `Intl` | Without |
 | --- | --- | --- |
-| plural category | `Intl.PluralRules` per locale | `count === 1 ? one : other`, then the usual fallback to `other` |
+| plural category | `Intl.PluralRules` per locale | `count === 1 ? 'one' : 'other'`, then the usual fallback to `'other'` |
 | `#` and `{n, number}` | `Intl.NumberFormat` | `String(n)` — no grouping separators |
-| `{d, date}` / `{d, time}` | `Intl.DateTimeFormat` | `toLocaleDateString()` / `toLocaleTimeString()` |
+| `{d, date}` / `{d, time}` | `Intl.DateTimeFormat` | `toLocaleDateString(locale)` / `toLocaleTimeString(locale)` — the locale argument is spec'd as ignorable, so engines without ICU drop it |
 
 Output loses locale nuance; it never fails. A dev-only warning names each missing
 constructor once. For full ICU on such an engine, load an `Intl` polyfill (detection
