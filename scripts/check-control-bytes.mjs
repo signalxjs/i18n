@@ -60,10 +60,14 @@ if (findings.length > 0) {
     if (findings.length > MAX_REPORTED) {
         console.error(`   … and ${findings.length - MAX_REPORTED} more.\n`);
     }
+    // Name the byte that was actually found: this gate rejects every C0 control
+    // plus DEL, and a hint that only ever says U+0000 misdescribes the other 30.
+    const example = findings[0].byte.toString(16).padStart(4, '0');
     console.error(
-        '   Write the character as an escape (`\\u0000`) instead of pasting the raw\n' +
-            '   byte. QuickJS-family engines — lynx/PrimJS — stop tokenizing at a raw\n' +
-            '   NUL, so one of these kills the entire bundle. See issue #53.'
+        `   Write the character as an escape (\`\\u${example}\`) instead of pasting the\n` +
+            '   raw byte. Raw controls are legal JS but hostile to it — a raw NUL stops\n' +
+            '   QuickJS-family engines (lynx/PrimJS) mid-token, taking down the entire\n' +
+            '   bundle rather than one string. See issue #53.'
     );
     process.exit(1);
 }
