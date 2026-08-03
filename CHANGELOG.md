@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **`Intl` is no longer assumed to exist** (#54). The default formatter constructed
+  `Intl.PluralRules` and `Intl.NumberFormat` unconditionally, so on an engine without
+  an `Intl` global — lynx's PrimJS (QuickJS-derived) is one — **every plural lookup
+  threw a `ReferenceError`**. The `#` substitution builds a `NumberFormat` on every
+  plural lookup whether or not the message contains a `#`, so an entry as plain as
+  `{ "minutesAgo": { "one": "#m ago", "other": "#m ago" } }` was enough: it threw
+  during render, once per list row, and an error boundary's retry re-entered the same
+  render — an unrecoverable screen. `{arg, date}` / `{arg, time}` had the same defect
+  via `Intl.DateTimeFormat`.
+
+  Each constructor is now feature-detected and degrades instead of throwing: plurals
+  pick `one`/`other` (the existing fallback to `other` still covers a catalog without
+  a `one` form), `#` and `{n, number}` render as `String(n)`, and dates and times go
+  through `toLocaleDateString`/`toLocaleTimeString`, which those engines do have.
+  Output loses locale nuance, but a plural key can no longer take a render down; a
+  dev-only warning names each missing constructor once. Detection is per call and
+  fallbacks are never cached, so an `Intl` polyfill loaded at any point — before or
+  after the module is evaluated — is picked up. Where `Intl` exists, behaviour and
+  output are unchanged. `@sigx/i18n/server` shares the formatter and is fixed with it.
+
 ### Docs
 - **`persistence.storage` no longer claims a default this package doesn't own**
   (#51). The JSDoc said "Default `localStorage`", but `@sigx/i18n` never touches

@@ -397,6 +397,22 @@ the locale won't survive a restart and nothing is logged either way.
 asynchronously, resolve it before creating the store and pass `initialLocale`,
 or `await store.setLocale(native)` once it arrives.
 
+**`Intl` is optional.** Some engines ship without it — lynx's PrimJS (QuickJS-derived)
+has `Date.prototype.toLocaleDateString`/`toLocaleTimeString` but no `Intl` object at
+all. The default formatter feature-detects each constructor it needs and degrades
+rather than throwing, so a plural key never takes a render down:
+
+| Needs | With `Intl` | Without |
+| --- | --- | --- |
+| plural category | `Intl.PluralRules` per locale | `count === 1 ? 'one' : 'other'`, then the usual fallback to `'other'` |
+| `#` and `{n, number}` | `Intl.NumberFormat` | `String(n)` — no grouping separators |
+| `{d, date}` / `{d, time}` | `Intl.DateTimeFormat` | `toLocaleDateString(locale)` / `toLocaleTimeString(locale)` — the locale argument is spec'd as ignorable, so engines without ICU drop it |
+
+Output loses locale nuance; it never fails. A dev-only warning names each missing
+constructor once. For full ICU on such an engine, load an `Intl` polyfill (detection
+is per call, so a polyfill installed at any point is picked up) or pass your own
+`createI18n({ formatter })`.
+
 ## License
 
 MIT © Andreas Ekdahl
