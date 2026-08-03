@@ -11,6 +11,7 @@
   "scripts": {
     "sync:core": "node scripts/sync-core.mjs",
     "verify:catalog": "node scripts/check-catalog.mjs",
+    "verify:bytes": "node scripts/check-control-bytes.mjs packages/i18n/src packages/i18n/dist",
     "wt": "node scripts/worktree.mjs",
     "build": "pnpm -r run build",
     "test": "vitest run",
