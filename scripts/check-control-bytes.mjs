@@ -41,6 +41,8 @@ const isControlByte = (b) => (b < 0x20 && !ALLOWED.has(b)) || b === 0x7f;
  * scanned rather than skipped.
  */
 const SKIP_DIRS = new Set(['node_modules', '.git']);
+/** How many offenders to print before summarising the rest. */
+const MAX_REPORTED = 20;
 const BINARY_EXT = /\.(png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|wasm|mp4|webm)$/i;
 
 /** Every file under `path`, recursively; a file path yields just itself. */
@@ -79,6 +81,16 @@ function locate(buf, offset) {
     return { line, column: offset - lineStart + 1, lineStart, lineEnd };
 }
 
+/**
+ * Report paths relative to `cwd`, except when that would climb out of it — a
+ * `../../../../private/tmp/…` prefix is longer and harder to read than the
+ * absolute path it is derived from.
+ */
+const display = (cwd, file) => {
+    const rel = relative(cwd, file);
+    return rel.startsWith('..') ? file : rel;
+};
+
 /** `\x00` → `␀` — the Unicode "control picture" for the byte, so it can be seen. */
 const picture = (b) => (b === 0x7f ? '␡' : String.fromCodePoint(0x2400 + b));
 
@@ -111,7 +123,7 @@ export async function findControlBytes(paths, { cwd = process.cwd() } = {}) {
         }
         for (const file of files) {
             const buf = await readFile(file);
-            scanned.push(relative(cwd, file));
+            scanned.push(display(cwd, file));
             // Fast path: nearly every file is clean, and a byte-by-byte walk of
             // a whole dist/ is wasted work. `buf.some` short-circuits, and the
             // detailed pass below only runs for a file that already failed.
@@ -120,7 +132,7 @@ export async function findControlBytes(paths, { cwd = process.cwd() } = {}) {
                 if (!isControlByte(buf[i])) continue;
                 const { line, column, lineStart, lineEnd } = locate(buf, i);
                 findings.push({
-                    file: relative(cwd, file),
+                    file: display(cwd, file),
                     offset: i,
                     byte: buf[i],
                     line,
@@ -156,12 +168,18 @@ async function main() {
     }
 
     if (findings.length > 0) {
-        console.error(`\n❌ Raw control byte${findings.length > 1 ? 's' : ''} found:\n`);
-        for (const f of findings) {
+        console.error(`\n❌ ${findings.length} raw control byte${findings.length > 1 ? 's' : ''} found:\n`);
+        // One mangled file can hold thousands of them; printing every one buries
+        // the first (and the exit code) under its own output. The count above is
+        // the total, so the truncation is never silent.
+        for (const f of findings.slice(0, MAX_REPORTED)) {
             const hex = f.byte.toString(16).padStart(4, '0').toUpperCase();
             console.error(`   ${f.file}:${f.line}:${f.column}  U+${hex} (byte offset ${f.offset})`);
             console.error(`   │ ${f.source}`);
             console.error(`   │ ${' '.repeat(Math.max(0, f.column - 1))}^\n`);
+        }
+        if (findings.length > MAX_REPORTED) {
+            console.error(`   … and ${findings.length - MAX_REPORTED} more.\n`);
         }
         console.error(
             '   Write the character as an escape (`\\u0000`) instead of pasting the raw\n' +
