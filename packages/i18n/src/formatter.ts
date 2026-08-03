@@ -7,6 +7,11 @@
  *  - plural selection over `PluralForms` objects via `Intl.PluralRules` (`count`),
  *  - `#` inside a plural form → the locale-formatted `count`.
  *
+ * `Intl` is treated as optional. On an engine that lacks it (Lynx's PrimJS, for
+ * one) every branch degrades instead of throwing: plurals pick `one`/`other`,
+ * numbers render as `String(n)`, dates and times go through `toLocale*String`.
+ * Output loses locale nuance, but rendering never fails.
+ *
  * A full ICU implementation can replace this wholesale via
  * `createI18n({ formatter })` — the runtime only depends on the `Formatter`
  * interface, never on this file.
@@ -29,28 +34,64 @@ export function isPluralForms(value: unknown): value is PluralForms {
     return keys.every(k => PLURAL_CATEGORIES.has(k));
 }
 
+// ── Intl availability ───────────────────────────────────────────────────────
+// Some engines ship no `Intl` at all — Lynx's PrimJS (QuickJS-derived) is one,
+// and there `Intl` is an undefined *global*, so touching it throws a
+// ReferenceError rather than yielding undefined. Detect per constructor and per
+// call: a polyfill loaded after this module was evaluated still gets picked up,
+// and fallbacks are never cached, so nothing pins the degraded behaviour.
+const warnedMissing = new Set<string>();
+
+function intlHas(name: 'NumberFormat' | 'DateTimeFormat' | 'PluralRules'): boolean {
+    const ok = typeof Intl !== 'undefined'
+        && typeof (Intl as unknown as Record<string, unknown>)[name] === 'function';
+    if (__DEV__ && !ok && !warnedMissing.has(name)) {
+        warnedMissing.add(name);
+        console.warn(
+            `[@sigx/i18n] Intl.${name} is unavailable on this engine — degrading to a plain fallback. ` +
+            `Load an Intl polyfill or pass createI18n({ formatter }) for full ICU output.`
+        );
+    }
+    return ok;
+}
+
+/** The subset of an `Intl` formatter this module actually uses. */
+interface FormatterLike<T> { format(value: T): string }
+
+// `toLocale*String` is ES5 core (present even on PrimJS) and its locale argument
+// is spec'd as ignorable, so passing it is safe and honoured where ICU exists.
+const plainNumber: FormatterLike<number> = { format: n => String(n) };
+const plainDate = (locale: string): FormatterLike<Date> => ({ format: d => d.toLocaleDateString(locale) });
+const plainTime = (locale: string): FormatterLike<Date> => ({ format: d => d.toLocaleTimeString(locale) });
+
 // ── Intl formatter caches (per locale / per locale+kind) ────────────────────
 const numberFmts = new Map<string, Intl.NumberFormat>();
 const dateFmts = new Map<string, Intl.DateTimeFormat>();
 const timeFmts = new Map<string, Intl.DateTimeFormat>();
 const pluralRules = new Map<string, Intl.PluralRules>();
 
-function numberFmt(locale: string): Intl.NumberFormat {
+function numberFmt(locale: string): FormatterLike<number> {
+    if (!intlHas('NumberFormat')) return plainNumber;
     let f = numberFmts.get(locale);
     if (!f) { f = new Intl.NumberFormat(locale); numberFmts.set(locale, f); }
     return f;
 }
-function dateFmt(locale: string): Intl.DateTimeFormat {
+function dateFmt(locale: string): FormatterLike<Date> {
+    if (!intlHas('DateTimeFormat')) return plainDate(locale);
     let f = dateFmts.get(locale);
     if (!f) { f = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }); dateFmts.set(locale, f); }
     return f;
 }
-function timeFmt(locale: string): Intl.DateTimeFormat {
+function timeFmt(locale: string): FormatterLike<Date> {
+    if (!intlHas('DateTimeFormat')) return plainTime(locale);
     let f = timeFmts.get(locale);
     if (!f) { f = new Intl.DateTimeFormat(locale, { timeStyle: 'short' }); timeFmts.set(locale, f); }
     return f;
 }
 function plural(locale: string, n: number): PluralCategory {
+    // Without CLDR rules the best available answer is the English shape; the
+    // caller already falls back to `other` when the chosen form is absent.
+    if (!intlHas('PluralRules')) return n === 1 ? 'one' : 'other';
     let r = pluralRules.get(locale);
     if (!r) { r = new Intl.PluralRules(locale); pluralRules.set(locale, r); }
     return r.select(n) as PluralCategory;
