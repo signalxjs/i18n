@@ -12,15 +12,16 @@
  * package build — that is the artifact that actually shipped broken. This test is
  * the fast half of the same guard: it asserts on SOURCE, so it needs no build step
  * and fails at the place the regression is introduced, matching the convention in
- * `edge-clean.test.ts`. Both halves call the same function, so there is one
- * detector rather than two that can drift.
+ * `edge-clean.test.ts`. Both halves import the detector from
+ * `scripts/lib/control-bytes.mjs`, so there is one implementation rather than two
+ * that can drift.
  */
 import { describe, it, expect } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { findControlBytes } from '../../../scripts/check-control-bytes.mjs';
+import { findControlBytes } from '../../../scripts/lib/control-bytes.mjs';
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), '..');
 
