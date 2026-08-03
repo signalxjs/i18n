@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-03
+
+A single-issue patch, and the second lynx-blocking one in a row: the published
+bundle contained a byte that QuickJS-family engines refuse to parse, so no lynx
+app could load `@sigx/i18n` at all. No API change; the runtime strings are
+identical, and `dist/index.js` is marginally smaller.
+
 ### Fixed
 - **A raw NUL byte no longer ships in `dist/index.js`** (#53). `<T>`'s
   (namespace, locale) cache key was written with a **literal U+0000** pasted into
