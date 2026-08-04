@@ -1,6 +1,6 @@
 {
     "name": "@sigx/i18n",
-    "version": "0.3.3",
+    "version": "0.3.4",
     "description": "Reactive localization (i18n) for SignalX - namespaces, master fallback, typed keys, SSR",
     "type": "module",
     "sideEffects": false,

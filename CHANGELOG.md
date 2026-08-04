@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-08-04
+
+A single-purpose patch: the already-merged alignment to sigx core 0.15. No API
+change to `@sigx/i18n` itself.
+
 ### Changed
 - **Aligned to sigx core 0.15** (#59). The catalog moves every core pin to
   `^0.15.0`, and the `@sigx/store` peer/dev pins move to `>=0.13.0 <0.14.0` /
