@@ -25,14 +25,15 @@ const requestT = createRequestT({
  * Answers in the caller's language. `rq.request` is passed explicitly — i18n
  * never imports `@sigx/server`, and `@sigx/server` never imports i18n.
  *
- * `unguarded: true` is a real declaration, not boilerplate: core 0.14 requires
- * every server function to derive from a preset, declare `use`, or say this
- * (rfc-server-v3 §1.3-1.4), so that "deliberately public" and "forgot the
- * guard" cannot look alike. A greeting that reads nothing and writes nothing is
- * genuinely open — and it stays greppable for a security review.
+ * `allowAnonymous: true` is a real declaration, not boilerplate: core 0.15's
+ * fail-closed runtime denies any server function with no decided access policy
+ * (rfc-server-v4 §1.2, §5), so that "deliberately public" and "forgot the
+ * guard" cannot look alike. It waives only the identity gate — middleware and
+ * authentication still run. A greeting that reads nothing and writes nothing
+ * is genuinely open — and it stays greppable for a security review.
  */
 export const greet = serverFn<string, string>({
-    unguarded: true,
+    allowAnonymous: true,
     handler(rq, name) {
         const rt = requestT(rq.request);
         // `forNamespace` gives the same typed proxy the client gets from

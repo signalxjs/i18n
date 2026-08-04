@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Aligned to sigx core 0.15** (#59). The catalog moves every core pin to
+  `^0.15.0`, and the `@sigx/store` peer/dev pins move to `>=0.13.0 <0.14.0` /
+  `^0.13.0` (store 0.13.0 is the tier-1 release built against core 0.15). No
+  change to `@sigx/i18n`'s own source. The `resume-i18n` example migrated its
+  `greet` server function from core 0.14's `unguarded: true` to core 0.15's
+  `allowAnonymous: true` (rfc-server-v4 fail-closed guard split — see core's
+  `docs/migrations/0.15-guard-split.md`).
+
 ## [0.3.3] - 2026-08-03
 
 A single-issue patch, and the second lynx-blocking one in a row: the published
