@@ -33,15 +33,15 @@
   },
   "devDependencies": {
     "@size-limit/preset-small-lib": "^11",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
-    "@vitest/coverage-v8": "^4.1.5",
-    "happy-dom": "^20.11.1",
-    "oxlint": "^1.76.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "happy-dom": "^20.11.6",
+    "oxlint": "^1.79.0",
     "size-limit": "^11",
     "typescript": "^7.0.2",
-    "vite": "^8.0.3",
-    "vitest": "^4.1.5"
+    "vite": "^8.2.1",
+    "vitest": "^4.1.11"
   },
   "keywords": [
     "SignalX",
