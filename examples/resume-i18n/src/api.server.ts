@@ -34,7 +34,9 @@ const requestT = createRequestT({
  */
 export const greet = serverFn<string, string>({
     allowAnonymous: true,
-    handler(rq, name) {
+    // Core 1.0 handler shape (signalxjs/core#692): one `input`, destructured
+    // beside `rq` — `handler(rq, name)` was the 0.x form.
+    handler({ input: name, rq }) {
         const rt = requestT(rq.request);
         // `forNamespace` gives the same typed proxy the client gets from
         // `useTranslation` — `greeting`/`signoff` are checked against the

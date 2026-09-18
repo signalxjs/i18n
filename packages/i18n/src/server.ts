@@ -247,9 +247,9 @@ export interface RequestTOptions extends ServerI18nOptions {
  * ```ts
  * const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
  *
- * export const greet = serverFn(async (rq) =>
- *     requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
- * );
+ * export const greet = serverFn({
+ *     handler: ({ rq }) => requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
+ * });
  * ```
  *
  * The result is the same {@link LocaleTranslator} `forLocale()` returns — the

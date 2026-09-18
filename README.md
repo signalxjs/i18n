@@ -275,9 +275,9 @@ import catalogs from 'virtual:sigx-i18n/server-catalogs';
 
 const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
 
-export const greet = serverFn(async (rq) =>
-    requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
-);
+export const greet = serverFn({
+    handler: ({ rq }) => requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
+});
 ```
 
 A request only decides *which* locale, so what it hands back is the very same
