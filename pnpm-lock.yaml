@@ -90,8 +90,8 @@ importers:
         specifier: 'catalog:'
         version: 1.0.0(sigx@1.0.0)
       '@sigx/store':
-        specifier: ^0.13.0
-        version: 0.13.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))
+        specifier: ^0.14.0
+        version: 0.14.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -155,8 +155,8 @@ importers:
         specifier: 'catalog:'
         version: 1.0.0(sigx@1.0.0)
       '@sigx/store':
-        specifier: ^0.13.0
-        version: 0.13.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))
+        specifier: ^0.14.0
+        version: 0.14.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -192,8 +192,8 @@ importers:
         specifier: 'catalog:'
         version: 1.0.0(@sigx/reactivity@1.0.0)
       '@sigx/store':
-        specifier: ^0.13.0
-        version: 0.13.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))
+        specifier: ^0.14.0
+        version: 0.14.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))
       '@sigx/vite':
         specifier: 'catalog:'
         version: 1.0.0(@sigx/resume@1.0.0(@sigx/server-renderer@1.0.0(sigx@1.0.0))(sigx@1.0.0))(@sigx/server-renderer@1.0.0(sigx@1.0.0))(@sigx/server@1.0.0(sigx@1.0.0))(sigx@1.0.0)(vite@8.1.5(@types/node@26.1.2)(jiti@2.7.0))
@@ -676,11 +676,11 @@ packages:
     peerDependencies:
       sigx: ^1.0.0
 
-  '@sigx/store@0.13.0':
-    resolution: {integrity: sha512-FVJrs06DhFoZxM5Itx7Vkru0b1NT1kWy4Ac0+ge5T7+Bjpy3gpNTN9b3x0SvhjhZnTFMK7vQmXkMwpomzYrbUA==}
+  '@sigx/store@0.14.0':
+    resolution: {integrity: sha512-qhDLL3JWoOZj7Vdot0ZRDHSpBCBs6QgVE3SUMNxNaeCQdTg7R5ybXMxwRrHw44GEXJdz7FL5IU2l/rUnGuFJMw==}
     peerDependencies:
-      '@sigx/reactivity': ^0.15.0
-      '@sigx/runtime-core': ^0.15.0
+      '@sigx/reactivity': ^1.0.0
+      '@sigx/runtime-core': ^1.0.0
 
   '@sigx/vite@1.0.0':
     resolution: {integrity: sha512-XAfFGOKOyYHAMTyQpc4qG5vM5Kw1NMfRP8/hvVpt814CWUe1VvC4wbCBqYJCKdu0UcfZWaAK9sKpGocQDq55jg==}
@@ -1928,7 +1928,7 @@ snapshots:
       '@sigx/serialize': 1.0.0
       sigx: 1.0.0
 
-  '@sigx/store@0.13.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))':
+  '@sigx/store@0.14.0(@sigx/reactivity@1.0.0)(@sigx/runtime-core@1.0.0(@sigx/reactivity@1.0.0))':
     dependencies:
       '@sigx/reactivity': 1.0.0
       '@sigx/runtime-core': 1.0.0(@sigx/reactivity@1.0.0)
