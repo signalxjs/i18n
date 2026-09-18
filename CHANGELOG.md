@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Aligned to sigx core 1.0** (#69, via #68). The catalog moves every core pin
+  to `^1.0.0` — which, now that core promises additive 1.x minors, is one range
+  for the whole major rather than one per minor — and the `@sigx/store` peer/dev
+  pins move to `>=0.14.0 <0.15.0` / `^0.14.0` (store 0.14.0 is the tier-1
+  release built against core 1.0). No change to `@sigx/i18n`'s runtime. The
+  `createRequestT` example in the README and JSDoc, and the `resume-i18n`
+  example's `greet` server function, move to core 1.0's only authoring form,
+  `serverFn({ handler: ({ input, rq }) => … })` (rfc-server-v5, core#692 — see
+  core's `docs/migrations/1.0-serverfn.md`); the example's smoke looks the
+  function up by its stable `<id>/greet` key, the hashed wire symbol being gone.
+
 ## [0.3.4] - 2026-08-04
 
 A single-purpose patch: the already-merged alignment to sigx core 0.15. No API

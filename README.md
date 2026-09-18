@@ -270,14 +270,16 @@ type both virtual modules.
 request's `Accept-Language` / cookie / query, exactly like the client store:
 
 ```ts
+import { serverFn } from '@sigx/server';
 import { createRequestT } from '@sigx/i18n/server';
 import catalogs from 'virtual:sigx-i18n/server-catalogs';
 
 const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
 
-export const greet = serverFn(async (rq) =>
-    requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
-);
+export const greet = serverFn({
+    allowAnonymous: true, // core is fail-closed: a fn with no access policy is denied
+    handler: ({ rq }) => requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
+});
 ```
 
 A request only decides *which* locale, so what it hands back is the very same
