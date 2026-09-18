@@ -248,6 +248,7 @@ export interface RequestTOptions extends ServerI18nOptions {
  * const requestT = createRequestT({ catalogs, fallbackLocale: 'en', supported: ['en', 'sv'] });
  *
  * export const greet = serverFn({
+ *     allowAnonymous: true, // core is fail-closed: a fn with no access policy is denied
  *     handler: ({ rq }) => requestT(rq.request).forNamespace('mail').greeting({ name: 'Ada' })
  * });
  * ```
