@@ -16,11 +16,11 @@ onlyBuiltDependencies:
 # to a new core minor — `pnpm sync:core X.Y` does exactly that. Consumed via
 # `"catalog:"` in package.json; `pnpm pack` rewrites it to the concrete range.
 catalog:
-  "@sigx/reactivity": ^0.15.0
-  "@sigx/resume": ^0.15.0
-  "@sigx/runtime-core": ^0.15.0
-  "@sigx/runtime-dom": ^0.15.0
-  "@sigx/server": ^0.15.0
-  "@sigx/server-renderer": ^0.15.0
-  "@sigx/vite": ^0.15.0
-  sigx: ^0.15.0
+  "@sigx/reactivity": ^1.0.0
+  "@sigx/resume": ^1.0.0
+  "@sigx/runtime-core": ^1.0.0
+  "@sigx/runtime-dom": ^1.0.0
+  "@sigx/server": ^1.0.0
+  "@sigx/server-renderer": ^1.0.0
+  "@sigx/vite": ^1.0.0
+  sigx: ^1.0.0
