@@ -270,6 +270,7 @@ type both virtual modules.
 request's `Accept-Language` / cookie / query, exactly like the client store:
 
 ```ts
+import { serverFn } from '@sigx/server';
 import { createRequestT } from '@sigx/i18n/server';
 import catalogs from 'virtual:sigx-i18n/server-catalogs';
 

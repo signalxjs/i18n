@@ -106,8 +106,11 @@ try {
     const { serverFns } = await import(new URL('./dist/server/sigx-server-fns.js', import.meta.url).href);
     // Core 1.0 (signalxjs/core#692): the stable `<id>/<name>` key is the only
     // route and registry key — the hashed `greet_fn_<hash8>` symbol is gone.
-    const symbol = Object.keys(serverFns).find((s) => s.endsWith('/greet'));
+    const keys = Object.keys(serverFns);
+    const symbol = keys.find((s) => s.endsWith('/greet'));
+    check('the server-fn registry carries a `<id>/greet` key', symbol !== undefined, `keys: ${keys.join(', ') || '(none)'}`);
     const callGreet = async (headers) => {
+        if (!symbol) return '';
         const res = await fetch(`${BASE}/_sigx/fn/${symbol}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Origin: BASE, ...headers },
