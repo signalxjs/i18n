@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-19
+
 ### Changed
 - **Aligned to sigx core 1.0** (#69, via #68). The catalog moves every core pin
   to `^1.0.0` — which, now that core promises additive 1.x minors, is one range
