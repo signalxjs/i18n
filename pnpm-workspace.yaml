@@ -19,11 +19,11 @@ onlyBuiltDependencies:
 # pnpm hoist ONE copy. Consumed via `"catalog:"` in package.json; `pnpm pack`
 # rewrites it to the concrete range.
 catalog:
-  "@sigx/reactivity": ^1.0.0
-  "@sigx/resume": ^1.0.0
-  "@sigx/runtime-core": ^1.0.0
-  "@sigx/runtime-dom": ^1.0.0
-  "@sigx/server": ^1.0.0
-  "@sigx/server-renderer": ^1.0.0
-  "@sigx/vite": ^1.0.0
-  sigx: ^1.0.0
+  "@sigx/reactivity": ^1.0.1
+  "@sigx/resume": ^1.0.1
+  "@sigx/runtime-core": ^1.0.1
+  "@sigx/runtime-dom": ^1.0.1
+  "@sigx/server": ^1.0.1
+  "@sigx/server-renderer": ^1.0.1
+  "@sigx/vite": ^1.0.1
+  sigx: ^1.0.1
