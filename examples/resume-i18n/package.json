@@ -19,7 +19,7 @@
     "@sigx/server": "catalog:",
     "@sigx/server-renderer": "catalog:",
     "@sigx/store": "^0.14.0",
-    "express": "^5.2.1",
+    "express": "^5.3.0",
     "sigx": "catalog:"
   },
   "devDependencies": {
